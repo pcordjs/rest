@@ -1,0 +1,41 @@
+{
+  "extends": [
+    "plugin:@typescript-eslint/recommended",
+    "plugin:@typescript-eslint/recommended-requiring-type-checking"
+  ],
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "project": "./tsconfig.json"
+  },
+  "rules": {
+    "@typescript-eslint/ban-ts-comment": 2,
+    "@typescript-eslint/ban-types": 2,
+    "@typescript-eslint/consistent-indexed-object-style": 2,
+    "@typescript-eslint/consistent-type-assertions": 2,
+    "@typescript-eslint/consistent-type-definitions": [2, "interface"],
+    "@typescript-eslint/dot-notation": 2,
+    "@typescript-eslint/explicit-member-accessibility": 2,
+    "@typescript-eslint/member-delimiter-style": 2,
+    "@typescript-eslint/method-signature-style": 2,
+    "@typescript-eslint/no-base-to-string": 2,
+    "@typescript-eslint/no-duplicate-imports": 2,
+    "@typescript-eslint/no-dynamic-delete": 2,
+    "@typescript-eslint/no-empty-function": 2,
+    "@typescript-eslint/no-empty-interface": 2,
+    "@typescript-eslint/no-explicit-any": 2,
+    "@typescript-eslint/no-extraneous-class": 2,
+    "@typescript-eslint/no-invalid-this": 2,
+    "@typescript-eslint/no-loop-func": 2,
+    "@typescript-eslint/no-non-null-asserted-nullish-coalescing": 2,
+    "@typescript-eslint/no-redeclare": 2,
+    "@typescript-eslint/no-require-imports": 2,
+    "@typescript-eslint/no-throw-literal": 2,
+    "@typescript-eslint/no-unused-expressions": 2,
+    "@typescript-eslint/no-use-before-define": 2,
+    "@typescript-eslint/prefer-readonly": 2,
+    "@typescript-eslint/prefer-readonly-parameter-types": 2,
+    "@typescript-eslint/prefer-regexp-exec": 2,
+    "@typescript-eslint/prefer-return-this-type": 2,
+    "@typescript-eslint/unified-signatures": 2
+  }
+}
