@@ -33,7 +33,6 @@
     "@typescript-eslint/no-unused-expressions": 2,
     "@typescript-eslint/no-use-before-define": 2,
     "@typescript-eslint/prefer-readonly": 2,
-    "@typescript-eslint/prefer-readonly-parameter-types": 2,
     "@typescript-eslint/prefer-regexp-exec": 2,
     "@typescript-eslint/prefer-return-this-type": 2,
     "@typescript-eslint/unified-signatures": 2
