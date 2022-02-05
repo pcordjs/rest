@@ -1,5 +1,6 @@
 import * as https from 'https';
 import * as stream from 'stream';
+import * as timers from 'timers/promises';
 import { URLSearchParams } from 'url';
 import { createGunzip, createInflate } from 'zlib';
 import RESTError, { RESTErrorCode } from './RESTError';
@@ -41,6 +42,45 @@ export default class RESTClient {
     }`;
   }
 
+  private block: Promise<void> | null = null;
+
+  private readonly buckets = new Map<string, RateLimitBucket>();
+
+  // global bucket
+  private readonly queue: RequestFinalizer[] = [];
+  private flushing = false;
+
+  private async flushBucket(bucket: RateLimitBucket) {
+    if (bucket.flushing) return;
+    bucket.flushing = true;
+    try {
+      await this.block;
+      for (const finalizeRequest of bucket.queue) {
+        if (bucket.remaining === 0) {
+          await timers.setTimeout(bucket.reset.getTime() - Date.now(), null, {
+            ref: false
+          });
+        }
+        await finalizeRequest();
+      }
+    } finally {
+      bucket.flushing = false;
+    }
+  }
+
+  private async flushGlobalBucket() {
+    if (this.flushing) return;
+    this.flushing = true;
+    try {
+      await this.block;
+      for (const finalizeRequest of this.queue) {
+        await finalizeRequest();
+      }
+    } finally {
+      this.flushing = false;
+    }
+  }
+
   public request<ResponseType = Buffer>(
     method: string,
     path: string,
@@ -57,18 +97,42 @@ export default class RESTClient {
     let finalPath = path;
     if (options.queryString) finalPath += `?${options.queryString.toString()}`;
 
-    return this.finalizeRequest({
-      headers,
-      method,
-      path: finalPath,
-      host:
-        options.destination === RequestDestination.CDN
-          ? this.options.cdn ?? 'cdn.discordapp.com'
-          : this.options.api ?? 'discord.com',
-      agent: this.options.agent ?? httpsAgent,
-      body: options.body === undefined ? undefined : Buffer.from(options.body),
-      timeout: options.timeout ?? this.options.timeout ?? Infinity
-    }) as Promise<ResponseType>;
+    const bucketId = RESTClient.getRateLimitBucket(finalPath);
+
+    return new Promise<ResponseType>((resolve, reject) => {
+      const finalize: RequestFinalizer = () =>
+        new Promise<void>(
+          (onResponse) =>
+            void (
+              this.finalizeRequest({
+                headers,
+                method,
+                path: finalPath,
+                host:
+                  options.destination === RequestDestination.CDN
+                    ? this.options.cdn ?? 'cdn.discordapp.com'
+                    : this.options.api ?? 'discord.com',
+                agent: this.options.agent ?? httpsAgent,
+                body:
+                  options.body === undefined
+                    ? undefined
+                    : Buffer.from(options.body),
+                timeout: options.timeout ?? this.options.timeout ?? Infinity,
+                bucketId,
+                onResponse
+              }) as Promise<ResponseType>
+            ).then(resolve, reject)
+        );
+
+      const bucket = bucketId ? this.buckets.get(bucketId) : null;
+      if (bucket) {
+        bucket.queue.push(finalize);
+        this.flushBucket(bucket).catch(reject);
+      } else {
+        this.queue.push(finalize);
+        this.flushGlobalBucket().catch(reject);
+      }
+    });
   }
 
   /** Sends a request, ignoring any ratelimits. */
@@ -80,6 +144,8 @@ export default class RESTClient {
     agent: https.Agent;
     body?: Buffer;
     timeout: number;
+    bucketId: string | null;
+    onResponse: () => void;
   }) {
     return new Promise((resolve, reject) => {
       let cancelled = false;
@@ -119,6 +185,54 @@ export default class RESTClient {
             })
           );
         };
+
+        const rateLimitReset =
+          'x-ratelimit-reset' in response.headers
+            ? new Date(
+                parseFloat(response.headers['x-ratelimit-reset'] as string) *
+                  1000
+              )
+            : 'retry-after' in response.headers
+            ? new Date(
+                parseInt(response.headers['retry-after']!) * 1000 + Date.now()
+              )
+            : null;
+        if ('x-ratelimit-bucket' in response.headers && init.bucketId) {
+          let bucket = this.buckets.get(init.bucketId);
+          const remaining = parseInt(
+            response.headers['x-ratelimit-remaining'] as string,
+            10
+          );
+
+          if (!bucket) {
+            bucket = {
+              remaining,
+              reset: rateLimitReset!,
+              queue: [],
+              flushing: false
+            };
+
+            this.buckets.set(init.bucketId, bucket);
+          } else {
+            bucket.remaining = remaining;
+            bucket.reset = rateLimitReset!;
+          }
+        }
+
+        if (
+          response.statusCode === 429 &&
+          rateLimitReset &&
+          'x-ratelimit-global' in response.headers
+        ) {
+          this.block = new Promise((resolve) => {
+            setTimeout(() => {
+              this.block = null;
+              resolve();
+            }, rateLimitReset.getTime() - Date.now()).unref();
+          });
+        }
+
+        init.onResponse();
 
         response.once('error', handleError);
 
@@ -168,6 +282,15 @@ export default class RESTClient {
       )?.[1] ?? null
     );
   }
+}
+
+type RequestFinalizer = () => Promise<void>;
+
+interface RateLimitBucket {
+  remaining: number;
+  reset: Date;
+  queue: RequestFinalizer[];
+  flushing: boolean;
 }
 
 export interface RequestOptions {
