@@ -36,7 +36,7 @@ export default class RESTClient {
 
   public get auth(): string {
     if (!this.options.token) throw new RESTError(RESTErrorCode.TOKEN_REQUIRED);
-    return `${this.options.tokenType === TokenType.BOT ? 'Bot' : 'Bearer'} ${
+    return `${this.options.tokenType === TokenType.BEARER ? 'Bearer' : 'Bot'} ${
       this.options.token
     }`;
   }
@@ -62,9 +62,9 @@ export default class RESTClient {
       method,
       path: finalPath,
       host:
-        options.destination === RequestDestination.API
-          ? this.options.api ?? 'discord.com'
-          : this.options.cdn ?? 'cdn.discordapp.com',
+        options.destination === RequestDestination.CDN
+          ? this.options.cdn ?? 'cdn.discordapp.com'
+          : this.options.api ?? 'discord.com',
       agent: this.options.agent ?? httpsAgent,
       body: options.body === undefined ? undefined : Buffer.from(options.body),
       timeout: options.timeout ?? this.options.timeout ?? Infinity
