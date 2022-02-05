@@ -52,7 +52,7 @@ export default class RESTClient {
       ...options.headers
     };
 
-    if (options.authHeaders) headers.Authorization = this.auth;
+    if (options.auth) headers.Authorization = this.auth;
 
     let finalPath = path;
     if (options.queryString) finalPath += `?${options.queryString.toString()}`;
@@ -176,7 +176,7 @@ export interface RequestOptions {
   /** The body of the request */
   body?: string | Buffer;
   /** Whether or not to attach the `Authorization` header (requires token) */
-  authHeaders?: boolean;
+  auth?: boolean;
   /** The amount of time, in milliseconds, after which to give up the request */
   timeout?: number;
   /** Where the request will be sent to - the API, or CDN */
