@@ -56,7 +56,7 @@ export default class RESTClient {
     try {
       await this.block;
       while (bucket.queue.length) {
-        const finalizeRequest = this.queue.shift()!;
+        const finalizeRequest = bucket.queue.shift()!;
 
         if (bucket.remaining === 0) {
           await timers.setTimeout(bucket.reset.getTime() - Date.now(), null, {
