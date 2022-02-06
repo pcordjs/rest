@@ -55,12 +55,15 @@ export default class RESTClient {
     bucket.flushing = true;
     try {
       await this.block;
-      for (const finalizeRequest of bucket.queue) {
+      while (bucket.queue.length) {
+        const finalizeRequest = this.queue.shift()!;
+
         if (bucket.remaining === 0) {
           await timers.setTimeout(bucket.reset.getTime() - Date.now(), null, {
             ref: false
           });
         }
+
         await finalizeRequest();
       }
     } finally {
@@ -73,7 +76,8 @@ export default class RESTClient {
     this.flushing = true;
     try {
       await this.block;
-      for (const finalizeRequest of this.queue) {
+      while (this.queue.length) {
+        const finalizeRequest = this.queue.shift()!;
         await finalizeRequest();
       }
     } finally {
