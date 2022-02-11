@@ -53,9 +53,9 @@ export default class RESTClient {
     bucket.flushing = true;
     try {
       await this.block;
-      while (bucket.queue.length) {
-        const finalizeRequest = bucket.queue.shift()!;
 
+      let finalizeRequest: RequestFinalizer | null = null;
+      while ((finalizeRequest = bucket.queue.shift() ?? null)) {
         if (bucket.remaining === 0) {
           await timers.setTimeout(bucket.reset.getTime() - Date.now(), null, {
             ref: false
@@ -74,10 +74,10 @@ export default class RESTClient {
     this.flushing = true;
     try {
       await this.block;
-      while (this.queue.length) {
-        const finalizeRequest = this.queue.shift()!;
+
+      let finalizeRequest: RequestFinalizer | null = null;
+      while ((finalizeRequest = this.queue.shift() ?? null))
         await finalizeRequest();
-      }
     } finally {
       this.flushing = false;
     }
@@ -193,18 +193,21 @@ export default class RESTClient {
           );
         };
 
-        const rateLimitReset =
-          'x-ratelimit-reset' in response.headers
-            ? new Date(
-                parseFloat(response.headers['x-ratelimit-reset'] as string) *
-                  1000
-              )
-            : 'retry-after' in response.headers
-            ? new Date(
-                parseInt(response.headers['retry-after']!) * 1000 + Date.now()
-              )
-            : null;
-        if ('x-ratelimit-bucket' in response.headers && init.bucketId) {
+        const rateLimitReset = response.headers['x-ratelimit-reset']
+          ? new Date(
+              parseFloat(response.headers['x-ratelimit-reset'] as string) * 1000
+            )
+          : response.headers['retry-after']
+          ? new Date(
+              parseInt(response.headers['retry-after']) * 1000 + Date.now()
+            )
+          : null;
+
+        if (
+          response.headers['x-ratelimit-remaining'] &&
+          init.bucketId &&
+          rateLimitReset
+        ) {
           let bucket = this.buckets.get(init.bucketId);
           const remaining = parseInt(
             response.headers['x-ratelimit-remaining'] as string,
@@ -214,7 +217,7 @@ export default class RESTClient {
           if (!bucket) {
             bucket = {
               remaining,
-              reset: rateLimitReset!,
+              reset: rateLimitReset,
               queue: [],
               flushing: false
             };
@@ -222,7 +225,7 @@ export default class RESTClient {
             this.buckets.set(init.bucketId, bucket);
           } else {
             bucket.remaining = remaining;
-            bucket.reset = rateLimitReset!;
+            bucket.reset = rateLimitReset;
           }
         }
 
