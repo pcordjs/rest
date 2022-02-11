@@ -1,8 +1,8 @@
-import * as https from 'https';
-import * as stream from 'stream';
-import * as timers from 'timers/promises';
-import { URLSearchParams } from 'url';
-import { createGunzip, createInflate } from 'zlib';
+import * as https from 'node:https';
+import * as stream from 'node:stream';
+import * as timers from 'node:timers/promises';
+import { URLSearchParams } from 'node:url';
+import { createGunzip, createInflate } from 'node:zlib';
 import RESTError, { RESTErrorCode } from './RESTError';
 
 // eslint-disable-next-line
