@@ -28,9 +28,7 @@ export default class RESTClient {
   public get userAgent(): string {
     const parts = [BASE_USER_AGENT];
 
-    if (this.options.userAgentSuffix) {
-      parts.push(this.options.userAgentSuffix);
-    }
+    if (this.options.userAgentSuffix) parts.push(this.options.userAgentSuffix);
 
     return parts.join(', ');
   }
@@ -97,9 +95,16 @@ export default class RESTClient {
     };
 
     if (options.auth) headers.Authorization = this.auth;
+    if (typeof options.body === 'object' && !(options.body instanceof Buffer))
+      headers['Content-Type'] = 'application/json';
 
     let finalPath = path;
     if (options.queryString) finalPath += `?${options.queryString.toString()}`;
+
+    const finalBody =
+      typeof options.body === 'object' && !(options.body instanceof Buffer)
+        ? Buffer.from(JSON.stringify(options.body))
+        : options.body;
 
     const bucketId = RESTClient.getRateLimitBucket(finalPath);
 
@@ -118,9 +123,7 @@ export default class RESTClient {
                     : this.options.api ?? 'discord.com',
                 agent: this.options.agent ?? httpsAgent,
                 body:
-                  options.body === undefined
-                    ? undefined
-                    : Buffer.from(options.body),
+                  finalBody !== undefined ? Buffer.from(finalBody) : undefined,
                 timeout: options.timeout ?? this.options.timeout ?? Infinity,
                 bucketId,
                 onResponse
@@ -247,11 +250,9 @@ export default class RESTClient {
           // TODO: remove me
           console.log(response.headers);
 
-          if (encoding.includes('gzip')) {
-            stream = response.pipe(createGunzip());
-          } else if (encoding.includes('deflate')) {
+          if (encoding.includes('gzip')) stream = response.pipe(createGunzip());
+          else if (encoding.includes('deflate'))
             stream = response.pipe(createInflate());
-          }
         }
 
         stream.once('error', handleError);
@@ -267,11 +268,9 @@ export default class RESTClient {
 
             if (
               response.headers['content-type']?.startsWith('application/json')
-            ) {
+            )
               resolve(JSON.parse(data));
-            } else {
-              resolve(Buffer.from(data));
-            }
+            else resolve(Buffer.from(data));
           });
       });
 
@@ -300,8 +299,24 @@ interface RateLimitBucket {
 export interface RequestOptions {
   /** The headers to send with the request */
   headers?: Record<string, string>;
-  /** The body of the request */
-  body?: string | Buffer;
+  /**
+   * The body of the request.
+   *
+   * @remarks
+   * Strings and buffers will be sent as-is.
+   * However, objects and arrays will be serialized to JSON,
+   * and a `Content-Type: application/json` header will be added.
+   *
+   * @example
+   * ```ts
+   * // POST some JSON data to an endpoint
+   * await client.request('POST', '/api/v9/channels/123456789/messages', {
+   *   body: { content: 'Hello world!' },
+   *   auth: true
+   * });
+   * ```
+   */
+  body?: string | Buffer | Record<string, unknown> | unknown[];
   /** Whether or not to attach the `Authorization` header (requires token) */
   auth?: boolean;
   /** The amount of time, in milliseconds, after which to give up the request */
