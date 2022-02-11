@@ -1,4 +1,5 @@
-import { format } from 'util';
+import { format } from 'node:util';
+
 export enum RESTErrorCode {
   /** Used when a token is requried but cannot be found */
   TOKEN_REQUIRED,
