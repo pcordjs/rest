@@ -250,9 +250,6 @@ export default class RESTClient {
         if (response.headers['content-encoding']) {
           const encoding = response.headers['content-encoding'];
 
-          // TODO: remove me
-          console.log(response.headers);
-
           if (encoding.includes('gzip')) stream = response.pipe(createGunzip());
           else if (encoding.includes('deflate'))
             stream = response.pipe(createInflate());
