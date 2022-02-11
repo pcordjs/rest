@@ -56,6 +56,7 @@ export default class RESTClient {
 
       let finalizeRequest: RequestFinalizer | null = null;
       while ((finalizeRequest = bucket.queue.shift() ?? null)) {
+        /* eslint-disable no-await-in-loop */
         if (bucket.remaining === 0) {
           await timers.setTimeout(bucket.reset.getTime() - Date.now(), null, {
             ref: false
@@ -63,6 +64,7 @@ export default class RESTClient {
         }
 
         await finalizeRequest();
+        /* eslint-enable no-await-in-loop */
       }
     } finally {
       bucket.flushing = false;
@@ -77,6 +79,7 @@ export default class RESTClient {
 
       let finalizeRequest: RequestFinalizer | null = null;
       while ((finalizeRequest = this.queue.shift() ?? null))
+        // eslint-disable-next-line no-await-in-loop
         await finalizeRequest();
     } finally {
       this.flushing = false;
