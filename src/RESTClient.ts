@@ -199,7 +199,7 @@ export default class RESTClient {
             )
           : response.headers['retry-after']
           ? new Date(
-              parseInt(response.headers['retry-after']) * 1000 + Date.now()
+              parseInt(response.headers['retry-after'], 10) * 1000 + Date.now()
             )
           : null;
 
