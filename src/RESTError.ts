@@ -26,3 +26,14 @@ export default class RESTError extends Error {
 }
 
 export class RESTWarning extends RESTError {}
+
+export class DiscordAPIError extends Error {
+  public constructor(
+    public readonly code: number,
+    message: string,
+    stack?: string
+  ) {
+    super(message);
+    if (stack) this.stack = `${this.name}: ${message}\n${stack}`;
+  }
+}

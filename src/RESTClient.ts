@@ -3,7 +3,14 @@ import * as stream from 'node:stream';
 import * as timers from 'node:timers/promises';
 import { URLSearchParams } from 'node:url';
 import { createGunzip, createInflate } from 'node:zlib';
-import RESTError, { RESTErrorCode, RESTWarning } from './RESTError';
+import RESTError, {
+  DiscordAPIError,
+  RESTErrorCode,
+  RESTWarning
+} from './RESTError';
+// FIXME(@doinkythederp): eslint rule false positive
+// eslint-disable-next-line no-restricted-imports
+import { captureStack } from './util';
 
 // eslint-disable-next-line
 const packageInfo = require('../package.json') as { version: string };
@@ -68,9 +75,8 @@ export default class RESTClient {
       while ((finalizeRequest = bucket.queue.shift() ?? null)) {
         /* eslint-disable no-await-in-loop */
         if (bucket.remaining === 0) {
-          await timers.setTimeout(bucket.reset.getTime() - Date.now(), null, {
-            ref: false
-          });
+          console.log('out of requests');
+          await timers.setTimeout(bucket.reset.getTime() - Date.now());
         }
 
         await finalizeRequest();
@@ -88,9 +94,11 @@ export default class RESTClient {
       await this.block;
 
       let finalizeRequest: RequestFinalizer | null = null;
-      while ((finalizeRequest = this.queue.shift() ?? null))
+      while ((finalizeRequest = this.queue.shift() ?? null)) {
+        console.log('global');
         // eslint-disable-next-line no-await-in-loop
         await finalizeRequest();
+      }
     } finally {
       this.flushing = false;
     }
@@ -101,6 +109,7 @@ export default class RESTClient {
     path: string,
     options: RequestOptions = {}
   ) {
+    const stack = captureStack();
     const headers: Record<string, string> = {
       'User-Agent': this.userAgent,
       'Accept-Encoding': 'gzip,deflate',
@@ -119,7 +128,7 @@ export default class RESTClient {
         ? Buffer.from(JSON.stringify(options.body))
         : options.body;
 
-    const bucketId = RESTClient.getRateLimitBucket(finalPath);
+    const bucketId = RESTClient.getRateLimitBucket(path);
 
     return new Promise<ResponseType>((resolve, reject) => {
       const finalize: RequestFinalizer = () =>
@@ -136,12 +145,24 @@ export default class RESTClient {
                   finalBody !== undefined ? Buffer.from(finalBody) : undefined,
                 timeout: options.timeout ?? this.options.timeout ?? Infinity,
                 bucketId,
-                onResponse
+                onResponse,
+                stack
               }) as Promise<ResponseType>
             ).then(resolve, reject)
         );
 
-      const bucket = bucketId ? this.buckets.get(bucketId) : null;
+      let bucket = bucketId ? this.buckets.get(bucketId) : null;
+
+      if (bucketId && !bucket) {
+        bucket = {
+          remaining: Infinity,
+          reset: new Date(),
+          queue: [],
+          flushing: false
+        };
+        this.buckets.set(bucketId, bucket);
+      }
+
       if (bucket) {
         bucket.queue.push(finalize);
         this.flushBucket(bucket).catch(reject);
@@ -163,6 +184,7 @@ export default class RESTClient {
     timeout: number;
     bucketId: string | null;
     onResponse: () => void;
+    stack: string;
   }) {
     return new Promise((resolve, reject) => {
       let cancelled = false;
@@ -254,6 +276,27 @@ export default class RESTClient {
 
         init.onResponse();
 
+        const errored = response.statusCode
+          ? response.statusCode >= 400
+          : false;
+
+        if (
+          response.statusCode &&
+          (response.statusCode === 429 || response.statusCode >= 500)
+        ) {
+          const bucket = init.bucketId ? this.buckets.get(init.bucketId) : null;
+          const queue = bucket ? bucket.queue : this.queue;
+          queue.push(
+            () =>
+              new Promise<void>(
+                (onResponse) =>
+                  void this.finalizeRequest(
+                    Object.assign(init, { onResponse })
+                  ).then(resolve, reject)
+              )
+          );
+        }
+
         response.once('error', handleError);
 
         let stream: stream.Readable = response;
@@ -275,12 +318,25 @@ export default class RESTClient {
           .once('end', () => {
             if (cancelled) return;
             if (timeout !== null) clearTimeout(timeout);
-
-            if (
-              response.headers['content-type']?.startsWith('application/json')
+            const parsedData = response.headers['content-type']?.startsWith(
+              'application/json'
             )
-              resolve(JSON.parse(data));
-            else resolve(Buffer.from(data));
+              ? (JSON.parse(data) as unknown)
+              : Buffer.from(data);
+
+            if (errored) {
+              if (parsedData instanceof Buffer)
+                reject(new DiscordAPIError(-1, parsedData.toString()));
+              else {
+                reject(
+                  new DiscordAPIError(
+                    (parsedData as FailedRequest).code,
+                    (parsedData as FailedRequest).message,
+                    init.stack
+                  )
+                );
+              }
+            }
           });
       });
 
@@ -289,15 +345,16 @@ export default class RESTClient {
   }
 
   private static getRateLimitBucket(this: void, path: string) {
-    return (
-      /^\/api\/v\d+\/(channels\/\d+|guilds\/\d+|webhooks\/\d+\/\d+)/.exec(
-        path
-      )?.[1] ?? null
-    );
+    return /^\/(channels|guilds|webhooks\/\d+)\/\d+/.exec(path)?.[1] ?? null;
   }
 }
 
 type RequestFinalizer = () => Promise<void>;
+
+interface FailedRequest {
+  message: string;
+  code: number;
+}
 
 interface RateLimitBucket {
   remaining: number;
