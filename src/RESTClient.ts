@@ -188,6 +188,7 @@ export default class RESTClient {
   }) {
     return new Promise((resolve, reject) => {
       let cancelled = false;
+      const startTime = Date.now();
       const timeout =
         init.timeout === Infinity
           ? null
@@ -289,12 +290,15 @@ export default class RESTClient {
           const queue = bucket ? bucket.queue : this.queue;
           queue.push(
             () =>
-              new Promise<void>(
-                (onResponse) =>
-                  void this.finalizeRequest(
-                    Object.assign(init, { onResponse })
-                  ).then(resolve, reject)
-              )
+              new Promise<void>((onResponse) => {
+                if (timeout !== null) clearTimeout(timeout);
+                void this.finalizeRequest(
+                  Object.assign(init, {
+                    onResponse,
+                    timeout: init.timeout - (Date.now() - startTime)
+                  })
+                ).then(resolve, reject);
+              })
           );
         }
 
