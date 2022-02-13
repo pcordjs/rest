@@ -3,17 +3,19 @@ import * as stream from 'node:stream';
 import * as timers from 'node:timers/promises';
 import { URLSearchParams } from 'node:url';
 import { createGunzip, createInflate } from 'node:zlib';
-import RESTError, { RESTErrorCode } from './RESTError';
+import RESTError, {
+  DiscordAPIError,
+  RESTErrorCode,
+  RESTWarning
+} from './RESTError';
+// FIXME(@doinkythederp): eslint rule false positive
+// eslint-disable-next-line no-restricted-imports
+import { captureStack } from './util';
 
 // eslint-disable-next-line
 const packageInfo = require('../package.json') as { version: string };
 
 const BASE_USER_AGENT = `DiscordBot (https://github.com/pcordjs/rest, ${packageInfo.version})`;
-
-export enum RequestDestination {
-  API,
-  CDN
-}
 
 export enum TokenType {
   BOT,
@@ -23,7 +25,22 @@ export enum TokenType {
 const httpsAgent = new https.Agent({ keepAlive: true });
 
 export default class RESTClient {
-  public constructor(private readonly options: RESTClientOptions) {}
+  public constructor(private readonly options: RESTClientOptions) {
+    if (
+      !RESTClient.hasEmittedInvalidAPIVersionWarning &&
+      options.apiVersion !== undefined &&
+      (!Number.isInteger(options.apiVersion) || options.apiVersion < 0)
+    ) {
+      RESTClient.hasEmittedInvalidAPIVersionWarning = true;
+      process.emitWarning(new RESTWarning(RESTErrorCode.INVALID_API_VERSION), {
+        code: RESTErrorCode[RESTErrorCode.INVALID_API_VERSION],
+        ctor: RESTClient,
+        detail: `Expected a positive integer, got ${options.apiVersion}.`
+      });
+    }
+  }
+
+  private static hasEmittedInvalidAPIVersionWarning = false;
 
   public get userAgent(): string {
     const parts = [BASE_USER_AGENT];
@@ -52,16 +69,13 @@ export default class RESTClient {
     if (bucket.flushing) return;
     bucket.flushing = true;
     try {
-      await this.block;
-
       let finalizeRequest: RequestFinalizer | null = null;
       while ((finalizeRequest = bucket.queue.shift() ?? null)) {
         /* eslint-disable no-await-in-loop */
-        if (bucket.remaining === 0) {
-          await timers.setTimeout(bucket.reset.getTime() - Date.now(), null, {
-            ref: false
-          });
-        }
+        await this.block;
+
+        if (bucket.remaining === 0)
+          await timers.setTimeout(bucket.reset.getTime() - Date.now());
 
         await finalizeRequest();
         /* eslint-enable no-await-in-loop */
@@ -75,12 +89,14 @@ export default class RESTClient {
     if (this.flushing) return;
     this.flushing = true;
     try {
-      await this.block;
-
       let finalizeRequest: RequestFinalizer | null = null;
-      while ((finalizeRequest = this.queue.shift() ?? null))
-        // eslint-disable-next-line no-await-in-loop
+      while ((finalizeRequest = this.queue.shift() ?? null)) {
+        /* eslint-disable no-await-in-loop */
+        await this.block;
+
         await finalizeRequest();
+        /* eslint-enable no-await-in-loop */
+      }
     } finally {
       this.flushing = false;
     }
@@ -91,6 +107,7 @@ export default class RESTClient {
     path: string,
     options: RequestOptions = {}
   ) {
+    const stack = captureStack();
     const headers: Record<string, string> = {
       'User-Agent': this.userAgent,
       'Accept-Encoding': 'gzip,deflate',
@@ -101,7 +118,7 @@ export default class RESTClient {
     if (typeof options.body === 'object' && !(options.body instanceof Buffer))
       headers['Content-Type'] = 'application/json';
 
-    let finalPath = path;
+    let finalPath = `/api/v${this.options.apiVersion ?? '9'}${path}`;
     if (options.queryString) finalPath += `?${options.queryString.toString()}`;
 
     const finalBody =
@@ -109,7 +126,7 @@ export default class RESTClient {
         ? Buffer.from(JSON.stringify(options.body))
         : options.body;
 
-    const bucketId = RESTClient.getRateLimitBucket(finalPath);
+    const bucketId = RESTClient.getRateLimitBucket(path);
 
     return new Promise<ResponseType>((resolve, reject) => {
       const finalize: RequestFinalizer = () =>
@@ -120,21 +137,30 @@ export default class RESTClient {
                 headers,
                 method,
                 path: finalPath,
-                host:
-                  options.destination === RequestDestination.CDN
-                    ? this.options.cdn ?? 'cdn.discordapp.com'
-                    : this.options.api ?? 'discord.com',
+                host: this.options.host ?? 'discord.com',
                 agent: this.options.agent ?? httpsAgent,
                 body:
                   finalBody !== undefined ? Buffer.from(finalBody) : undefined,
                 timeout: options.timeout ?? this.options.timeout ?? Infinity,
                 bucketId,
-                onResponse
+                onResponse,
+                stack
               }) as Promise<ResponseType>
             ).then(resolve, reject)
         );
 
-      const bucket = bucketId ? this.buckets.get(bucketId) : null;
+      let bucket = bucketId ? this.buckets.get(bucketId) : null;
+
+      if (bucketId && !bucket) {
+        bucket = {
+          remaining: Infinity,
+          reset: new Date(),
+          queue: [],
+          flushing: false
+        };
+        this.buckets.set(bucketId, bucket);
+      }
+
       if (bucket) {
         bucket.queue.push(finalize);
         this.flushBucket(bucket).catch(reject);
@@ -156,9 +182,11 @@ export default class RESTClient {
     timeout: number;
     bucketId: string | null;
     onResponse: () => void;
+    stack: string;
   }) {
     return new Promise((resolve, reject) => {
       let cancelled = false;
+      const startTime = Date.now();
       const timeout =
         init.timeout === Infinity
           ? null
@@ -247,6 +275,31 @@ export default class RESTClient {
 
         init.onResponse();
 
+        const errored = response.statusCode
+          ? response.statusCode >= 400
+          : false;
+
+        if (
+          response.statusCode &&
+          (response.statusCode === 429 || response.statusCode >= 500)
+        ) {
+          cancelled = true;
+          const bucket = init.bucketId ? this.buckets.get(init.bucketId) : null;
+          const queue = bucket ? bucket.queue : this.queue;
+          queue.push(
+            () =>
+              new Promise<void>((onResponse) => {
+                if (timeout !== null) clearTimeout(timeout);
+                void this.finalizeRequest(
+                  Object.assign(init, {
+                    onResponse,
+                    timeout: init.timeout - (Date.now() - startTime)
+                  })
+                ).then(resolve, reject);
+              })
+          );
+        }
+
         response.once('error', handleError);
 
         let stream: stream.Readable = response;
@@ -261,20 +314,35 @@ export default class RESTClient {
         stream.once('error', handleError);
 
         let data = '';
-        stream
-          .on('data', (chunk) => {
-            data += chunk;
-          })
-          .once('end', () => {
-            if (cancelled) return;
-            if (timeout !== null) clearTimeout(timeout);
+        if (!cancelled) {
+          stream
+            .on('data', (chunk) => {
+              data += chunk;
+            })
+            .once('end', () => {
+              if (cancelled) return;
+              if (timeout !== null) clearTimeout(timeout);
+              const parsedData = response.headers['content-type']?.startsWith(
+                'application/json'
+              )
+                ? (JSON.parse(data) as unknown)
+                : Buffer.from(data);
 
-            if (
-              response.headers['content-type']?.startsWith('application/json')
-            )
-              resolve(JSON.parse(data));
-            else resolve(Buffer.from(data));
-          });
+              if (errored) {
+                if (parsedData instanceof Buffer)
+                  reject(new DiscordAPIError(-1, parsedData.toString()));
+                else {
+                  reject(
+                    new DiscordAPIError(
+                      (parsedData as FailedRequest).code,
+                      (parsedData as FailedRequest).message,
+                      init.stack
+                    )
+                  );
+                }
+              }
+            });
+        }
       });
 
       request.end(init.body);
@@ -282,15 +350,16 @@ export default class RESTClient {
   }
 
   private static getRateLimitBucket(this: void, path: string) {
-    return (
-      /^\/api\/v\d+\/(channels\/\d+|guilds\/\d+|webhooks\/\d+\/\d+)/.exec(
-        path
-      )?.[1] ?? null
-    );
+    return /^\/(channels|guilds|webhooks\/\d+)\/\d+/.exec(path)?.[1] ?? null;
   }
 }
 
 type RequestFinalizer = () => Promise<void>;
+
+interface FailedRequest {
+  message: string;
+  code: number;
+}
 
 interface RateLimitBucket {
   remaining: number;
@@ -324,8 +393,6 @@ export interface RequestOptions {
   auth?: boolean;
   /** The amount of time, in milliseconds, after which to give up the request */
   timeout?: number;
-  /** Where the request will be sent to - the API, or CDN */
-  destination?: RequestDestination;
   /** Query string pieces to be appended to the path */
   queryString?: URLSearchParams;
 }
@@ -335,10 +402,29 @@ export interface RESTClientOptions {
   token?: string;
   /** Specifies whether this is a bot token or a bearer token. */
   tokenType?: TokenType;
-  /** The endpoint of the Discord API */
-  api?: string;
-  /** The endpoint of the Discord CDN */
-  cdn?: string;
+  /**
+   * The hostname of the Discord API.
+   *
+   * @default
+   * ```ts
+   * 'discord.com'
+   * ```
+   */
+  host?: string;
+  /**
+   * The version number of the API which requests will be sent to.
+   *
+   * @remarks
+   * This is used so you don't have to specify an API
+   * version in every request. Altering this is a quick
+   * and easy way to start sending all requests to a new
+   * version.
+   *
+   * @default 9
+   *
+   * @see https://discord.com/developers/docs/reference#api-versioning
+   */
+  apiVersion?: number;
   /** Information to be appended to the base [User Agent](https://discord.com/developers/docs/reference#user-agent) */
   userAgentSuffix?: string;
   /** Passed to `https.request` */
