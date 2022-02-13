@@ -69,15 +69,13 @@ export default class RESTClient {
     if (bucket.flushing) return;
     bucket.flushing = true;
     try {
-      await this.block;
-
       let finalizeRequest: RequestFinalizer | null = null;
       while ((finalizeRequest = bucket.queue.shift() ?? null)) {
         /* eslint-disable no-await-in-loop */
-        if (bucket.remaining === 0) {
-          console.log('out of requests');
+        await this.block;
+
+        if (bucket.remaining === 0)
           await timers.setTimeout(bucket.reset.getTime() - Date.now());
-        }
 
         await finalizeRequest();
         /* eslint-enable no-await-in-loop */
@@ -91,13 +89,13 @@ export default class RESTClient {
     if (this.flushing) return;
     this.flushing = true;
     try {
-      await this.block;
-
       let finalizeRequest: RequestFinalizer | null = null;
       while ((finalizeRequest = this.queue.shift() ?? null)) {
-        console.log('global');
-        // eslint-disable-next-line no-await-in-loop
+        /* eslint-disable no-await-in-loop */
+        await this.block;
+
         await finalizeRequest();
+        /* eslint-enable no-await-in-loop */
       }
     } finally {
       this.flushing = false;
