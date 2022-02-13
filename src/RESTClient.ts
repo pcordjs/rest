@@ -312,33 +312,35 @@ export default class RESTClient {
         stream.once('error', handleError);
 
         let data = '';
-        stream
-          .on('data', (chunk) => {
-            data += chunk;
-          })
-          .once('end', () => {
-            if (cancelled) return;
-            if (timeout !== null) clearTimeout(timeout);
-            const parsedData = response.headers['content-type']?.startsWith(
-              'application/json'
-            )
-              ? (JSON.parse(data) as unknown)
-              : Buffer.from(data);
+        if (!cancelled) {
+          stream
+            .on('data', (chunk) => {
+              data += chunk;
+            })
+            .once('end', () => {
+              if (cancelled) return;
+              if (timeout !== null) clearTimeout(timeout);
+              const parsedData = response.headers['content-type']?.startsWith(
+                'application/json'
+              )
+                ? (JSON.parse(data) as unknown)
+                : Buffer.from(data);
 
-            if (errored) {
-              if (parsedData instanceof Buffer)
-                reject(new DiscordAPIError(-1, parsedData.toString()));
-              else {
-                reject(
-                  new DiscordAPIError(
-                    (parsedData as FailedRequest).code,
-                    (parsedData as FailedRequest).message,
-                    init.stack
-                  )
-                );
+              if (errored) {
+                if (parsedData instanceof Buffer)
+                  reject(new DiscordAPIError(-1, parsedData.toString()));
+                else {
+                  reject(
+                    new DiscordAPIError(
+                      (parsedData as FailedRequest).code,
+                      (parsedData as FailedRequest).message,
+                      init.stack
+                    )
+                  );
+                }
               }
-            }
-          });
+            });
+        }
       });
 
       request.end(init.body);
