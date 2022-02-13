@@ -284,6 +284,7 @@ export default class RESTClient {
           response.statusCode &&
           (response.statusCode === 429 || response.statusCode >= 500)
         ) {
+          cancelled = true;
           const bucket = init.bucketId ? this.buckets.get(init.bucketId) : null;
           const queue = bucket ? bucket.queue : this.queue;
           queue.push(
