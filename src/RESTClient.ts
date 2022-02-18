@@ -5,8 +5,7 @@ import { URLSearchParams } from 'node:url';
 import { createGunzip, createInflate } from 'node:zlib';
 import RESTError, {
   DiscordAPIError,
-  RESTErrorCode,
-  RESTWarning
+  RESTErrorCode
 } from './RESTError';
 // FIXME(@doinkythederp): eslint rule false positive
 // eslint-disable-next-line no-restricted-imports
@@ -32,10 +31,11 @@ export default class RESTClient {
       (!Number.isInteger(options.apiVersion) || options.apiVersion < 0)
     ) {
       RESTClient.hasEmittedInvalidAPIVersionWarning = true;
-      process.emitWarning(new RESTWarning(RESTErrorCode.INVALID_API_VERSION), {
+      process.emitWarning(new RESTError(RESTErrorCode.INVALID_API_VERSION).message, {
         code: RESTErrorCode[RESTErrorCode.INVALID_API_VERSION],
         ctor: RESTClient,
-        detail: `Expected a positive integer, got ${options.apiVersion}.`
+        detail: `Expected a positive integer, got ${options.apiVersion}.`,
+        type: 'RESTWarning'
       });
     }
   }

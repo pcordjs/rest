@@ -27,8 +27,6 @@ export default class RESTError extends Error {
   public override name = this.constructor.name;
 }
 
-export class RESTWarning extends RESTError {}
-
 export class DiscordAPIError extends Error {
   public constructor(
     public readonly code: number,

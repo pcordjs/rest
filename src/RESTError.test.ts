@@ -14,25 +14,6 @@ describe(errors.default, () => {
   });
 });
 
-describe(errors.RESTWarning, () => {
-  it('should *only* have a different name', () => {
-    const warning = new errors.RESTWarning(
-      errors.RESTErrorCode.TIMEOUT,
-      'argumentOne',
-      1500
-    );
-    const error = new errors.default(
-      errors.RESTErrorCode.TIMEOUT,
-      'argumentOne',
-      1500
-    );
-
-    expect(warning.message).toBe(error.message);
-    expect(warning.name).not.toBe(error.name);
-    expect(warning.stack).toContain(error.message);
-  });
-});
-
 describe(errors.DiscordAPIError, () => {
   it('should show its error code in the stack', () => {
     const error = new errors.DiscordAPIError(
