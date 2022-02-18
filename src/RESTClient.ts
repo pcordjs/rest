@@ -3,10 +3,7 @@ import * as stream from 'node:stream';
 import * as timers from 'node:timers/promises';
 import { URLSearchParams } from 'node:url';
 import { createGunzip, createInflate } from 'node:zlib';
-import RESTError, {
-  DiscordAPIError,
-  RESTErrorCode
-} from './RESTError';
+import RESTError, { DiscordAPIError, RESTErrorCode } from './RESTError';
 // FIXME(@doinkythederp): eslint rule false positive
 // eslint-disable-next-line no-restricted-imports
 import { captureStack } from './util';
@@ -14,7 +11,7 @@ import { captureStack } from './util';
 // eslint-disable-next-line
 const packageInfo = require('../package.json') as { version: string };
 
-const BASE_USER_AGENT = `DiscordBot (https://github.com/pcordjs/rest, ${packageInfo.version})`;
+export const BASE_USER_AGENT = `DiscordBot (https://github.com/pcordjs/rest, ${packageInfo.version})`;
 
 export enum TokenType {
   BOT,
@@ -31,12 +28,15 @@ export default class RESTClient {
       (!Number.isInteger(options.apiVersion) || options.apiVersion < 0)
     ) {
       RESTClient.hasEmittedInvalidAPIVersionWarning = true;
-      process.emitWarning(new RESTError(RESTErrorCode.INVALID_API_VERSION).message, {
-        code: RESTErrorCode[RESTErrorCode.INVALID_API_VERSION],
-        ctor: RESTClient,
-        detail: `Expected a positive integer, got ${options.apiVersion}.`,
-        type: 'RESTWarning'
-      });
+      process.emitWarning(
+        new RESTError(RESTErrorCode.INVALID_API_VERSION).message,
+        {
+          code: RESTErrorCode[RESTErrorCode.INVALID_API_VERSION],
+          ctor: RESTClient,
+          detail: `Expected a positive integer, got ${options.apiVersion}.`,
+          type: 'RESTWarning'
+        }
+      );
     }
   }
 
@@ -350,7 +350,9 @@ export default class RESTClient {
   }
 
   private static getRateLimitBucket(this: void, path: string) {
-    return /^\/(channels|guilds|webhooks\/\d+)\/\d+/.exec(path)?.[1] ?? null;
+    return (
+      /^\/((?:channels|guilds|webhooks\/\d+)\/\d+)/.exec(path)?.[1] ?? null
+    );
   }
 }
 
