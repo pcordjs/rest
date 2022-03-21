@@ -144,7 +144,8 @@ export default class RESTClient {
                 timeout: options.timeout ?? this.options.timeout ?? Infinity,
                 bucketId,
                 onResponse,
-                stack
+                stack,
+                port: this.options.port
               }) as Promise<ResponseType>
             ).then(resolve, reject)
         );
@@ -183,6 +184,7 @@ export default class RESTClient {
     bucketId: string | null;
     onResponse: () => void;
     stack: string;
+    port?: number;
   }) {
     return new Promise((resolve, reject) => {
       let cancelled = false;
@@ -202,7 +204,8 @@ export default class RESTClient {
         host: init.host,
         path: init.path,
         headers: init.headers,
-        method: init.method
+        method: init.method,
+        port: init.port
       });
 
       request.once('error', (err) => {
@@ -340,7 +343,7 @@ export default class RESTClient {
                     )
                   );
                 }
-              }
+              } else resolve(parsedData);
             });
         }
       });
@@ -413,6 +416,15 @@ export interface RESTClientOptions {
    * ```
    */
   host?: string;
+  /**
+   * The port number of the Discord API.
+   *
+   * @default
+   * ```ts
+   * 443
+   * ```
+   */
+  port?: number;
   /**
    * The version number of the API which requests will be sent to.
    *

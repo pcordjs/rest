@@ -1,24 +1,14 @@
 /// <reference types="jest" />
 
+import * as http from 'node:http';
 import timers from 'node:timers/promises';
+import { DiscordAPIError } from '.';
 import RESTClient, { BASE_USER_AGENT, TokenType } from './RESTClient';
 import RESTError from './RESTError';
 
-/*
- *import EventEmitter from 'node:events';
- *const requestEnd = jest.fn();
- *jest.mock('node:https', () => {
- *  const https = jest.requireActual<typeof import('node:https')>('node:https');
- *  return {
- *    ...https,
- *    request: jest.fn(() => {
- *      return new (class extends EventEmitter {
- *        public end = requestEnd;
- *      })();
- *    })
- *  };
- *});
- */
+jest.mock('node:https', () => {
+  return http;
+});
 
 describe(RESTClient, () => {
   it('should warn when using an invalid api version', () => {
@@ -193,5 +183,241 @@ describe(RESTClient, () => {
     expect(getRateLimitBucket('/webhooks/123/456')).toBe('webhooks/123/456');
 
     expect(getRateLimitBucket('/sticker-packs')).toBe(null);
+  });
+});
+
+describe('requests', () => {
+  let onRequest: http.RequestListener | undefined;
+  const PORT = 3000;
+
+  const server: http.Server = http.createServer((req, res) => {
+    onRequest?.(req, res);
+  });
+
+  beforeAll(() => new Promise<void>((resolve) => server.listen(PORT, resolve)));
+
+  beforeEach(() => {
+    onRequest = undefined;
+  });
+
+  afterAll(() => new Promise((resolve) => server.close(resolve)));
+
+  function nextRequest(): Promise<[http.IncomingMessage, http.ServerResponse]> {
+    return new Promise((resolve, reject) => {
+      if (onRequest) reject('A request listener is already set');
+      onRequest = (req, res) => {
+        onRequest = undefined;
+        resolve([req, res]);
+      };
+    });
+  }
+
+  function jsonBody<T>(req: http.IncomingMessage): Promise<T> {
+    return new Promise((resolve, reject) => {
+      let body = '';
+      req.on('data', (chunk) => (body += chunk));
+      req.on('end', () => resolve(JSON.parse(body) as T));
+      req.on('error', reject);
+    });
+  }
+
+  let client = new RESTClient({
+    host: 'localhost',
+    port: PORT
+  });
+
+  it('should always set the User-Agent and Accept-Encoding headers', async () => {
+    const handler = nextRequest().then(([req, res]) => {
+      try {
+        expect(req.headers['user-agent']).toBe(client.userAgent);
+        expect(req.headers['accept-encoding']).toBeTruthy();
+      } finally {
+        res.end();
+      }
+    });
+
+    await client.request('GET', '/');
+
+    return handler;
+  });
+
+  it('should set the Authorization header if the auth option is true', async () => {
+    const handler = nextRequest()
+      .then(([req, res]) => {
+        try {
+          expect(req.headers.authorization).toBeFalsy();
+        } finally {
+          res.end();
+        }
+      })
+      .then(nextRequest)
+      .then(([req, res]) => {
+        try {
+          expect(req.headers.authorization).toBe('Bot token');
+        } finally {
+          res.end();
+        }
+      })
+      .then(nextRequest)
+      .then(([req, res]) => {
+        try {
+          expect(req.headers.authorization).toBe('Bearer token');
+        } finally {
+          res.end();
+        }
+      });
+
+    client = new RESTClient({
+      token: 'token',
+      host: 'localhost',
+      port: PORT
+    });
+
+    await client.request('GET', '/');
+    await client.request('GET', '/', { auth: true });
+
+    client = new RESTClient({
+      token: 'token',
+      tokenType: TokenType.BEARER,
+      host: 'localhost',
+      port: PORT
+    });
+
+    await client.request('GET', '/', { auth: true });
+
+    return handler;
+  });
+
+  it('should automatically convert objects and arrays to JSON', async () => {
+    const arrayBody = [1, 2, 3];
+    const objectBody = { foo: 'bar', baz: arrayBody };
+
+    const handler = nextRequest()
+      .then(async ([req, res]) => {
+        try {
+          expect(req.headers['content-type']).toBe('application/json');
+          await expect(jsonBody(req)).resolves.toEqual(objectBody);
+        } finally {
+          res.end();
+        }
+      })
+      .then(nextRequest)
+      .then(async ([req, res]) => {
+        try {
+          expect(req.headers['content-type']).toBe('application/json');
+          await expect(jsonBody(req)).resolves.toEqual(arrayBody);
+        } finally {
+          res.end();
+        }
+      });
+
+    await client.request('POST', '/', {
+      body: objectBody
+    });
+
+    await client.request('POST', '/', {
+      body: arrayBody
+    });
+
+    return handler;
+  });
+
+  it('should send requests to the v9 API by default', async () => {
+    const handler = nextRequest().then(([req, res]) => {
+      try {
+        expect(req.url).toBe('/api/v9/users/@me');
+      } finally {
+        res.end();
+      }
+    });
+
+    await client.request('GET', '/users/@me');
+
+    return handler;
+  });
+
+  it('should append a query string when the queryString option is set', async () => {
+    const handler = nextRequest().then(([req, res]) => {
+      try {
+        expect(req.url?.slice(req.url.indexOf('?'))).toBe('?foo=bar');
+      } finally {
+        res.end();
+      }
+    });
+
+    await client.request('GET', '/', {
+      queryString: new URLSearchParams({ foo: 'bar' })
+    });
+
+    return handler;
+  });
+
+  it('should use rate limit buckets when applicable', async () => {
+    const handler = nextRequest().then(([req, res]) => {
+      try {
+        expect(req.url).toBe('/api/v9/channels/123');
+      } finally {
+        res.end();
+      }
+    });
+
+    await client.request('GET', '/channels/123');
+
+    return handler;
+  });
+
+  it('should use the timeout option to abort requests that hang', async () => {
+    const handler = nextRequest().then(async ([, res]) => {
+      try {
+        await timers.setTimeout(1000);
+      } finally {
+        res.end();
+      }
+    });
+
+    await expect(
+      client.request('GET', '/', {
+        timeout: 500
+      })
+    ).rejects.toBeInstanceOf(RESTError);
+
+    return handler;
+  });
+
+  it('should throw on an unsuccessful response', async () => {
+    const handler = nextRequest().then(([, res]) => {
+      res.writeHead(400);
+      res.end();
+    });
+
+    await expect(client.request('GET', '/')).rejects.toBeInstanceOf(
+      DiscordAPIError
+    );
+
+    return handler;
+  });
+
+  it('should add the error code and message on an unsuccessful response', async () => {
+    const [code, message] = [123, 'foo'];
+
+    const handler = nextRequest().then(([, res]) => {
+      res.writeHead(400, {
+        'Content-Type': 'application/json'
+      });
+
+      res.end(
+        JSON.stringify({
+          code,
+          message
+        })
+      );
+    });
+
+    const request = client.request('GET', '/');
+    await expect(request).rejects.toBeInstanceOf(DiscordAPIError);
+    await expect(request).rejects.toHaveProperty('code', code);
+    await expect(request).rejects.toHaveProperty('message', message);
+
+    return handler;
   });
 });
