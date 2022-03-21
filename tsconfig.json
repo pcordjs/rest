@@ -4,6 +4,7 @@
     "module": "CommonJS",
     "lib": ["ES2021"],
     "declaration": true,
+    "declarationMap": true,
     "outDir": "dist",
     "rootDir": "src",
     "importHelpers": true,
