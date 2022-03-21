@@ -23,9 +23,9 @@ export default class RESTError extends Error {
   public constructor(public readonly code: RESTErrorCode, ...args: unknown[]) {
     super(format(messages[code], ...args));
   }
-}
 
-export class RESTWarning extends RESTError {}
+  public override name = this.constructor.name;
+}
 
 export class DiscordAPIError extends Error {
   public constructor(
@@ -34,6 +34,8 @@ export class DiscordAPIError extends Error {
     stack?: string
   ) {
     super(message);
-    if (stack) this.stack = `${this.name}: ${message}\n${stack}`;
+    if (stack) this.stack = `${this.name} [${this.code}]: ${message}\n${stack}`;
   }
+
+  public override name = this.constructor.name;
 }

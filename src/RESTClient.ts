@@ -3,11 +3,7 @@ import * as stream from 'node:stream';
 import * as timers from 'node:timers/promises';
 import { URLSearchParams } from 'node:url';
 import { createGunzip, createInflate } from 'node:zlib';
-import RESTError, {
-  DiscordAPIError,
-  RESTErrorCode,
-  RESTWarning
-} from './RESTError';
+import RESTError, { DiscordAPIError, RESTErrorCode } from './RESTError';
 // FIXME(@doinkythederp): eslint rule false positive
 // eslint-disable-next-line no-restricted-imports
 import { captureStack } from './util';
@@ -15,7 +11,7 @@ import { captureStack } from './util';
 // eslint-disable-next-line
 const packageInfo = require('../package.json') as { version: string };
 
-const BASE_USER_AGENT = `DiscordBot (https://github.com/pcordjs/rest, ${packageInfo.version})`;
+export const BASE_USER_AGENT = `DiscordBot (https://github.com/pcordjs/rest, ${packageInfo.version})`;
 
 export enum TokenType {
   BOT,
@@ -32,11 +28,15 @@ export default class RESTClient {
       (!Number.isInteger(options.apiVersion) || options.apiVersion < 0)
     ) {
       RESTClient.hasEmittedInvalidAPIVersionWarning = true;
-      process.emitWarning(new RESTWarning(RESTErrorCode.INVALID_API_VERSION), {
-        code: RESTErrorCode[RESTErrorCode.INVALID_API_VERSION],
-        ctor: RESTClient,
-        detail: `Expected a positive integer, got ${options.apiVersion}.`
-      });
+      process.emitWarning(
+        new RESTError(RESTErrorCode.INVALID_API_VERSION).message,
+        {
+          code: RESTErrorCode[RESTErrorCode.INVALID_API_VERSION],
+          ctor: RESTClient,
+          detail: `Expected a positive integer, got ${options.apiVersion}.`,
+          type: 'RESTWarning'
+        }
+      );
     }
   }
 
@@ -144,7 +144,8 @@ export default class RESTClient {
                 timeout: options.timeout ?? this.options.timeout ?? Infinity,
                 bucketId,
                 onResponse,
-                stack
+                stack,
+                port: this.options.port
               }) as Promise<ResponseType>
             ).then(resolve, reject)
         );
@@ -183,6 +184,7 @@ export default class RESTClient {
     bucketId: string | null;
     onResponse: () => void;
     stack: string;
+    port?: number;
   }) {
     return new Promise((resolve, reject) => {
       let cancelled = false;
@@ -202,7 +204,8 @@ export default class RESTClient {
         host: init.host,
         path: init.path,
         headers: init.headers,
-        method: init.method
+        method: init.method,
+        port: init.port
       });
 
       request.once('error', (err) => {
@@ -340,7 +343,7 @@ export default class RESTClient {
                     )
                   );
                 }
-              }
+              } else resolve(parsedData);
             });
         }
       });
@@ -350,7 +353,9 @@ export default class RESTClient {
   }
 
   private static getRateLimitBucket(this: void, path: string) {
-    return /^\/(channels|guilds|webhooks\/\d+)\/\d+/.exec(path)?.[1] ?? null;
+    return (
+      /^\/((?:channels|guilds|webhooks\/\d+)\/\d+)/.exec(path)?.[1] ?? null
+    );
   }
 }
 
@@ -411,6 +416,15 @@ export interface RESTClientOptions {
    * ```
    */
   host?: string;
+  /**
+   * The port number of the Discord API.
+   *
+   * @default
+   * ```ts
+   * 443
+   * ```
+   */
+  port?: number;
   /**
    * The version number of the API which requests will be sent to.
    *
