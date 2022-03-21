@@ -525,7 +525,7 @@ interface FailedRequest {
 }
 
 /**
- * Stores information about all requests to a specific route bucket.
+ * Stores information about all requests going to a specific route bucket.
  *
  * @remarks
  * Rate limit buckets (i.e. categories) are sets of API routes that have their
