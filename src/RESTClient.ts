@@ -681,10 +681,7 @@ export interface RESTClientOptions {
   /**
    * The hostname that requests will be sent to.
    *
-   * @default
-   * ```ts
-   * 'discord.com'
-   * ```
+   * @defaultValue `'discord.com'`
    *
    * @example Sending requests to a custom host
    * ```ts
@@ -700,10 +697,7 @@ export interface RESTClientOptions {
   /**
    * The port number that requests will be sent to.
    *
-   * @default
-   * ```ts
-   * 443
-   * ```
+   * @defaultValue `443`
    */
   port?: number;
   /**
@@ -714,7 +708,7 @@ export interface RESTClientOptions {
    * {@link RESTClient.request}. Changing this property will cause all requests
    * to be sent to a different version of the API.
    *
-   * @default 9
+   * @defaultValue `9`
    *
    * @example Sending all requests to an older API version
    * ```ts
