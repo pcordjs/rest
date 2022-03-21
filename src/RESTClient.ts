@@ -21,6 +21,9 @@ export const BASE_USER_AGENT = `DiscordBot (https://github.com/pcordjs/rest, ${p
 /**
  * The category of a Discord token, used to describe which is being used to
  * authenticate.
+ *
+ * @see {@link RESTClientOptions.tokenType} for setting the token type of
+ * requests
  */
 export enum TokenType {
   /**
@@ -598,6 +601,10 @@ export interface RequestOptions {
    *   }
    * });
    * ```
+   *
+   * @see The [Discord Developer
+   * Docs](https://discord.com/developers/docs/resources/audit-log#audit-logs)
+   * for information on the `X-Audit-Log-Reason` header
    */
   headers?: Record<string, string>;
   /**
@@ -610,6 +617,7 @@ export interface RequestOptions {
    *
    * @see {@link RequestOptions.headers} for more headers that are automatically
    * added
+   * @see {@link RESTClient.request} for an example using this field
    */
   body?: string | Buffer | Record<string, unknown> | unknown[];
   /**
