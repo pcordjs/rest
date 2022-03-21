@@ -219,6 +219,21 @@ export default class RESTClient {
   /**
    * Sends an HTTPS request to the Discord API.
    *
+   * @example Sending a "Hello World!" message to a channel
+   * ```ts
+   * import RESTClient from '@pcordjs/rest';
+   *
+   * const channelId = '123456789012345678';
+   * const client = new RESTClient({
+   *   token: '123.456.789'
+   * });
+   *
+   * await client.request('POST', `/channels/${channelId}/messages`, {
+   *   auth: true,
+   *   body: { content: 'Hello World!' }
+   * });
+   * ```
+   *
    * @typeParam ResponseType - Used to change the return type to what the API
    * will actually respond with. Defaults to a Buffer, which is used when JSON
    * was not sent in the response.
@@ -565,6 +580,24 @@ export interface RequestOptions {
    * requests. Additionally, the `Content-Type` header is set to
    * `application/json` if JSON data (i.e. an object or array) was passed to
    * {@link RequestOptions.body}.
+   *
+   * @example Setting an audit log reason when renaming a channel
+   * ```ts
+   * import RESTClient from '@pcordjs/rest';
+   *
+   * const channelId = '123456789012345678';
+   * const client = new RESTClient({
+   *   token: '123.456.789'
+   * });
+   *
+   * await client.request('PATCH', `/channels/${channelId}`, {
+   *   auth: true,
+   *   body: { name: 'new-name' },
+   *   headers: {
+   *     'X-Audit-Log-Reason': '@pcordjs/rest example'
+   *   }
+   * });
+   * ```
    */
   headers?: Record<string, string>;
   /**
@@ -574,14 +607,6 @@ export interface RequestOptions {
    * Strings and buffers will be sent as-is. However, objects and arrays will be
    * serialized to JSON, and a `Content-Type: application/json` header will be
    * added.
-   *
-   * @example POSTing JSON data to an endpoint
-   * ```ts
-   * await client.request('POST', '/api/v9/channels/123456789/messages', {
-   *   body: { content: 'Hello world!' },
-   *   auth: true
-   * });
-   * ```
    *
    * @see {@link RequestOptions.headers} for more headers that are automatically
    * added
@@ -633,6 +658,15 @@ export interface RESTClientOptions {
    *
    * @defaultValue {@link TokenType.BOT}
    *
+   * @example Using an OAuth2 bearer token
+   * ```ts
+   * import RESTClient, { TokenType } from '@pcordjs/rest';
+   *
+   * const client = new RESTClient({
+   *   token: '...',
+   *   tokenType: TokenType.BEARER
+   * });
+   * ```
    * @see {@link TokenType} for more information
    */
   tokenType?: TokenType;
@@ -642,6 +676,16 @@ export interface RESTClientOptions {
    * @default
    * ```ts
    * 'discord.com'
+   * ```
+   *
+   * @example Sending requests to a custom host
+   * ```ts
+   * import RESTClient from '@pcordjs/rest';
+   *
+   * const client = new RESTClient({
+   *   host: 'my-test-api.xyz',
+   *   port: 3000
+   * });
    * ```
    */
   host?: string;
@@ -664,11 +708,29 @@ export interface RESTClientOptions {
    *
    * @default 9
    *
+   * @example Sending all requests to an older API version
+   * ```ts
+   * import RESTClient from '@pcordjs/rest';
+   *
+   * const client = new RESTClient({
+   *   apiVersion: 8
+   * });
+   * ```
+   *
    * @see https://discord.com/developers/docs/reference#api-versioning
    */
   apiVersion?: number;
   /**
    * Information to be appended to the user agent
+   *
+   * @example Adding custom info to the user agent
+   * ```ts
+   * import RESTClient from '@pcordjs/rest';
+   *
+   * const client = new RESTClient({
+   *   userAgentSuffix: 'MyBot (https://mybot.example.com, 1.0.0)'
+   * });
+   * ```
    *
    * @see {@link RESTClient.userAgent} for more information
    */
