@@ -45,6 +45,21 @@ jobs:
             return package.name;
           result-encoding: string
 
+      - name: Get previous dev release
+        uses: actions/github-script@v6
+        id: dev-release
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            const { stripVTControlCharacters } = require('util');
+
+            const pattern = /\d+\.\d+\.\d+-dev\.[\w\d]+/;
+
+            const info = stripVTControlCharacters(execSync('npm info ${{ steps.package.outputs.result }}'));
+
+            return pattern.exec(info)?.[0] ?? 'dev';
+          result-encoding: string
+
       - name: Install dependencies
         run: pnpm install
 
@@ -52,7 +67,7 @@ jobs:
         run: pnpm build
 
       - name: Deprecate previous dev release
-        run: npm deprecate '${{ steps.package.outputs.result }}@dev' || true
+        run: npm deprecate '${{ steps.package.outputs.result }}@${{ steps.dev-release.outputs.result }}' 'No longer supported - there is a newer development release' || true
         # no failing in case there isn't a previous dev release
 
       - name: Publish dev release to npm registry
