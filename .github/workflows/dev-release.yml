@@ -69,6 +69,8 @@ jobs:
       - name: Deprecate previous dev release
         run: npm deprecate '${{ steps.package.outputs.result }}@${{ steps.dev-release.outputs.result }}' 'No longer supported - there is a newer development release' || true
         # no failing in case there isn't a previous dev release
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish dev release to npm registry
         run: npm publish --access public --tag dev
