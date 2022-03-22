@@ -12,7 +12,7 @@ first-class TypeScript support.
 ## Installation
 
 @pcordjs/rest can be installed from the npm registry, using the package manager
-of your choice. **Node.js 16+ is supported.**
+of your choice. **Node.js 16+ is required.**
 
 ```sh
 npm install @pcordjs/rest
