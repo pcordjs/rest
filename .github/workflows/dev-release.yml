@@ -55,7 +55,7 @@ jobs:
 
             const pattern = /\d+\.\d+\.\d+-dev\.[\w\d]+/;
 
-            const info = stripVTControlCharacters(execSync('npm info ${{ steps.package.outputs.result }}'));
+            const info = stripVTControlCharacters(execSync('npm info ${{ steps.package.outputs.result }}').toString());
 
             return pattern.exec(info)?.[0] ?? 'dev';
           result-encoding: string
