@@ -27,11 +27,11 @@ release](https://github.com/pcordjs/rest/releases).
 
 ## Getting Started
 
-As an example, let's have a bot send a message containing "Hello World!" to a channel.
+As an example, we'll make a bot user send "Hello World!" to a channel.
 
 To begin, you must first create a `RESTClient` object. The `botToken` variable
 should be set to the bot's token, retrieved from the Discord Developer Portal.
-In addition, set `channelId` to the ID of the channel you would like to send the
+In addition, set `channelId` to the ID of the channel you would like the bot to send the
 message to.
 
 ```ts
