@@ -1,0 +1,61 @@
+name: Publish development release
+
+on:
+  push:
+    branches:
+      - main
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: pnpm/action-setup@v2.0.1
+        with:
+          version: 6.32.3
+
+      - name: Use Node.js 17
+        uses: actions/setup-node@v2
+        with:
+          node-version: '17'
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org/'
+
+      - name: Get hash of last commit
+        run: echo "commit_hash=$(git rev-parse --short=10 HEAD)" >> $GITHUB_ENV
+
+      - name: Modify package version
+        uses: actions/github-script@v6
+        id: package
+        with:
+          script: |
+            const { writeFile } = require('fs/promises');
+
+            const packagePath = '${{ github.workspace }}/package.json';
+
+            const package = require(packagePath);
+            package.version += '-dev.${{ env.commit_hash }}';
+
+            await writeFile(packagePath, JSON.stringify(package, null, 2));
+
+            return package.name;
+          result-encoding: string
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build package
+        run: pnpm build
+
+      - name: Deprecate previous dev release
+        run: npm deprecate '${{ steps.package.outputs.result }}@dev' || true
+        # no failing in case there isn't a previous dev release
+
+      - name: Publish dev release to npm registry
+        run: npm publish --access public --tag dev
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

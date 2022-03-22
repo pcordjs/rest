@@ -1,0 +1,57 @@
+name: Publish package
+
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: pnpm/action-setup@v2.0.1
+        with:
+          version: 6.32.3
+
+      - name: Use Node.js 17
+        uses: actions/setup-node@v2
+        with:
+          node-version: '17'
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org/'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build package
+        run: pnpm build
+
+      - name: Create package tarball
+        run: pnpm pack
+
+      - name: Upload release assets
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { version } = require('${{ github.workspace }}/package.json');
+            const { readFile } = require('fs/promises');
+
+            const owner = context.payload.repository.owner.login;
+            const repo = context.payload.repository.name;
+
+            const fileName = `${owner}-${repo}-${version}.tgz`;
+
+            await github.rest.repos.uploadReleaseAsset({
+              owner,
+              repo,
+              release_id: context.payload.release.id,
+              name: fileName,
+              data: await readFile(`${{ github.workspace }}/${fileName}`)
+            });
+
+      - name: Publish to npm registry
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
