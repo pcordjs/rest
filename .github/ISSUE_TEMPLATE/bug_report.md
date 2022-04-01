@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-# Bug Description
+## Bug Description
 <!-- Include a clear description of the issue and the steps to reproduce it -->
 
 ## Code to reproduce

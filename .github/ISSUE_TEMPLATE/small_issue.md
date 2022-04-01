@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-# Problem Description
+## Problem Description
 <!-- Include a clear description of the issue as well as how to reproduce it. -->
 
 ## Screenshots

@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-# What is the motivation for this feature? Describe the user story.
+## What is the motivation for this feature? Describe the user story
 <!--
 For example:
 - As a developer, I often want to [...], but I'm always frustrated when [...]
@@ -15,7 +15,7 @@ For example:
 - A useful feature to add would be [...]
 -->
 
-## Describe the solution you'd like.
+## Describe the solution you'd like
 <!-- A clear and specific description of what you want to happen. -->
 
 ### Describe the drawbacks of the solution you'd like
@@ -27,8 +27,8 @@ For example:
 - Will it make the package harder to use?
 -->
 
-## Describe alternative solutions.
+## Describe alternative solutions
 <!-- A clear and specific description of any alternative solutions or features that would solve the same problem. -->
 
-**Additional context**
+## Additional context
 <!-- Any other context, including screenshots, that could help describe your feature request -->
