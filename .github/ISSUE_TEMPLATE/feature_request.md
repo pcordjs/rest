@@ -31,4 +31,7 @@ For example:
 <!-- A clear and specific description of any alternative solutions or features that would solve the same problem. -->
 
 ## Additional context
-<!-- Any other context, including screenshots, that could help describe your feature request -->
+<!--
+Any other context, including screenshots, that could help describe your feature request.
+Would you be willing to work on implementing this feature?
+-->

@@ -29,4 +29,5 @@ Move all applicable items out of the comment:
 - Node.js version (see `node -v`):
 - Priority this issue should have (low/med/high):
 - I have tested this issue on the latest development release.
+- I would be willing to implement a fix for this issue.
 -->
