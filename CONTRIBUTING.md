@@ -14,7 +14,7 @@ category](https://github.com/pcordjs/rest/discussions/categories/q-a).
 ### Reporting a problem
 
 If something is not working as expected, you can use the repository's
-[Issues](https://github.com/pcordjs/rest/issues) page to report it. Before
+[Issues][issues-page] page to report it. Before
 creating a bug report, use the search bar to make sure that what you're
 experiencing isn't already a known issue.
 
@@ -55,7 +55,7 @@ project grow.
 Before submitting your suggestion, remember to consider the following:
 
 - Your idea may have already been discussed. Use the
-  [Issues](https://github.com/pcordjs/rest/issues) search bar to see if there
+  [Issues][issues-page] search bar to see if there
   are any similar suggestions.
 - Your idea should be within the project's scope. The goal of this project is to
   provide a flexible, low-level HTTPS client for Discord's REST API.
@@ -77,3 +77,5 @@ Additionally, try to do the following:
 - Provide **code samples, screenshots, or GIFs** to help readers understand what you're saying.
 - Consider **how the suggestion would be implemented**. Try to think of at least 2
   different ways!
+
+[issues-page]: https://github.com/pcordjs/rest/issues
