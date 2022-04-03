@@ -78,7 +78,8 @@ Before submitting your suggestion, remember to consider the following:
 - Your idea may have already been discussed. Use the [Issues][issues-page]
   search bar to see if there are any similar suggestions.
 - Your idea should be within the project's scope. The goal of this project is to
-  provide a flexible, low-level HTTPS client for Discord's REST API.
+  provide a flexible, low-level HTTPS client for [Discord's REST
+  API][discord-docs].
 
 #### If you find an issue that suggests your idea
 
@@ -210,3 +211,4 @@ in the next release's changelog and, if you'd like, you will be added to the
 [about-draft-prs]:
     https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-pull-requests#draft-pull-requests
 [atom-contributing]: https://github.com/atom/atom/blob/master/CONTRIBUTING.md
+[discord-docs]: https://discord.com/developers/docs/reference
