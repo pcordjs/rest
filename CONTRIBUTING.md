@@ -23,6 +23,7 @@ helpful and welcome.
       - [Variable name styleguide](#variable-name-styleguide)
       - [Unit tests](#unit-tests)
       - [Pull requests](#pull-requests)
+  - [Acknowledgements](#acknowledgements)
 
 ## I have a question!
 
@@ -194,6 +195,13 @@ If you're not quite done with the changes but are looking for feedback, you can
 Once your pull request has been merged, congrats! Your changes will be mentioned
 in the next release's changelog and, if you'd like, you will be added to the
 `contributors` field in `package.json`.
+
+## Acknowledgements
+
+This CONTRIBUTING.md file contains excerpts from and was inspired in part by the
+Atom editor's CONTRIBUTING.md. [Click here to go check it
+out.][atom-contributing]
+
 
 [issues-page]: https://github.com/pcordjs/rest/issues
 [pr-page]: https://github.com/pcordjs/rest/pulls
