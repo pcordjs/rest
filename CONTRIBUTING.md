@@ -153,7 +153,9 @@ following configuration:
 }
 ```
 
-- Prefer the object spread operator `({...anotherObj})` to `Object.assign()`.
+Also:
+
+- Prefer the object spread operator `{ ...anotherObj }` to `Object.assign`.
 - Inline `export`s whenever possible.
   ```js
   // Use this:
