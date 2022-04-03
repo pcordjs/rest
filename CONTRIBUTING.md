@@ -3,6 +3,27 @@
 Thanks for taking the time to help this project improve! All contributions are
 helpful and welcome.
 
+## Table of Contents
+
+- [Contributing to @pcordjs/rest](#contributing-to-pcordjsrest)
+  - [Table of Contents](#table-of-contents)
+  - [I have a question!](#i-have-a-question)
+  - [Ways to contribute](#ways-to-contribute)
+    - [Reporting a problem](#reporting-a-problem)
+      - [If you find an issue that describes the same problem](#if-you-find-an-issue-that-describes-the-same-problem)
+      - [Reporting a typo](#reporting-a-typo)
+      - [Writing and submitting your report](#writing-and-submitting-your-report)
+    - [Suggesting features](#suggesting-features)
+      - [If you find an issue that suggests your idea](#if-you-find-an-issue-that-suggests-your-idea)
+      - [Writing and submitting your suggestion](#writing-and-submitting-your-suggestion)
+    - [Contributing code](#contributing-code)
+      - [Node.js packages](#nodejs-packages)
+      - [Project structure](#project-structure)
+      - [Code styleguide](#code-styleguide)
+      - [Variable name styleguide](#variable-name-styleguide)
+      - [Unit tests](#unit-tests)
+      - [Pull requests](#pull-requests)
+
 ## I have a question!
 
 If you just have a question about the library or need help, the best way you can
