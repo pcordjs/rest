@@ -178,6 +178,8 @@ and functions should use the camelCase naming style (e.g. `message`,
 When writing camelCase names, acronyms should be uppercase *unless* they are the
 first word in the name: `urlBucket` and `targetURL` are both correct.
 
+Also, constants (anything that could be inlined but is instead a variable) should use the SCREAMING_SNAKE_CASE naming style (e.g. `BASE_USER_AGENT`, `VERSION`).
+
 #### Committing & commit messages
 
 All pcordjs projects use [Conventional Commits][conventional-commits-website]
