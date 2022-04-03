@@ -227,6 +227,8 @@ Here is a full list of allowed commit types:
 
 When writing bug fixes, it is a good idea to write unit test(s) to enforce that the bug will stay fixed through future changes. When writing a new feature, consider writing unit tests to ensure that it works as intended.
 
+When you want to run unit tests, first make sure you have everything installed (`pnpm install`), then run `pnpm test` to start the test runner.
+
 #### Pull requests
 
 When you're ready for your changes to be merged, head over to the [Pull
