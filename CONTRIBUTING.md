@@ -21,6 +21,7 @@ helpful and welcome.
       - [Project structure](#project-structure)
       - [Code styleguide](#code-styleguide)
       - [Variable name styleguide](#variable-name-styleguide)
+      - [Committing & commit messages](#committing--commit-messages)
       - [Unit tests](#unit-tests)
       - [Pull requests](#pull-requests)
   - [Acknowledgements](#acknowledgements)
@@ -177,6 +178,47 @@ and functions should use the camelCase naming style (e.g. `message`,
 When writing camelCase names, acronyms should be uppercase *unless* they are the
 first word in the name: `urlBucket` and `targetURL` are both correct.
 
+#### Committing & commit messages
+
+All pcordjs projects use [Conventional Commits][conventional-commits-website]
+along with [commitlint][commitlint-website] to keep commit messages
+informational. Conventional commits have the following form:
+
+```
+type(OptionalScope): description
+
+[optional body]
+
+[optional footers]
+```
+
+Here is an example of a conforming commit message:
+
+```
+docs(Contributing): add Acknowledgements section
+```
+
+From this commit, you can easily see that the commit altered **docs** in the
+**Contributing** guidelines file by **add**ing an **Acknowledgements section**.
+When writing the commit description, make sure to use the present imperative
+tense ("add ABC" instead of "added ABC" or "adds ABC"). It might help to imagine
+that you are telling someone to do something ("go add ABC"), then remove the
+command: `feat: add ABC`.
+
+Here is a full list of allowed commit types:
+
+| Type | Description |
+|------|------------|
+| chore | Changes to workspace & configuration files |
+| feat | New features |
+| fix | Bug fixes |
+| refactor | Changes to internal features but not the external interface |
+| revert | Reversion of a previous change |
+| style | Changes to code style and formatting |
+| test | Changes or additions to unit tests |
+| types | Changes to type definitions |
+| docs | Changes to documentation files |
+
 #### Unit tests
 
 @pcordjs/rest uses [Jest][jest-website] for unit tests. Tests should go in `src/*.test.ts` files, and failing tests may cause your pull request to be blocked from merging. If tests are failing but you believe that they are not related to your changes, leave a comment on your pull request explaining that.
@@ -216,6 +258,7 @@ out.][atom-contributing]
 [typescript-website]: https://typescriptlang.org
 [prettier-website]: https://prettier.io
 [tsdoc-website]: https://tsdoc.org
+[conventional-commits-website]: https://conventionalcommits.org
 [link-to-issue-guide]:
     https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue
 [about-draft-prs]:
