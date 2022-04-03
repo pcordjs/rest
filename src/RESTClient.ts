@@ -283,9 +283,14 @@ export default class RESTClient {
     if (options.queryString) finalPath += `?${options.queryString.toString()}`;
 
     const finalBody =
-      typeof options.body === 'object' && !(options.body instanceof Buffer)
-        ? Buffer.from(JSON.stringify(options.body))
-        : options.body;
+      options.body instanceof stream.Readable || options.body === undefined
+        ? options.body
+        : Buffer.from(
+            typeof options.body === 'object' &&
+              !(options.body instanceof Buffer)
+              ? JSON.stringify(options.body)
+              : options.body
+          );
 
     const bucketId = RESTClient.getRateLimitBucket(path);
 
@@ -300,8 +305,7 @@ export default class RESTClient {
                 path: finalPath,
                 host: this.options.host ?? 'discord.com',
                 agent: this.options.agent ?? httpsAgent,
-                body:
-                  finalBody !== undefined ? Buffer.from(finalBody) : undefined,
+                body: finalBody !== undefined ? finalBody : undefined,
                 timeout: options.timeout ?? this.options.timeout ?? Infinity,
                 bucketId,
                 onResponse,
@@ -350,7 +354,7 @@ export default class RESTClient {
     path: string;
     host: string;
     agent: https.Agent;
-    body?: Buffer;
+    body?: Buffer | stream.Readable;
     timeout: number;
     bucketId: string | null;
     onResponse: () => void;
@@ -519,7 +523,8 @@ export default class RESTClient {
         }
       });
 
-      request.end(init.body);
+      if (init.body instanceof stream.Writable) init.body.pipe(request);
+      else request.end(init.body);
     });
   }
 
@@ -619,7 +624,12 @@ export interface RequestOptions {
    * added
    * @see {@link RESTClient.request} for an example using this field
    */
-  body?: string | Buffer | Record<string, unknown> | unknown[];
+  body?:
+    | string
+    | Buffer
+    | Record<string, unknown>
+    | unknown[]
+    | stream.Readable;
   /**
    * Controls if the request will be authenticated.
    *
