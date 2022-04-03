@@ -50,7 +50,7 @@ comment on it, describing your experience.
 #### Reporting a typo
 
 If the problem you're reporting is a typo or a just a simple mistake, you may
-want to use the **Small issue** template instead, in the following step.
+want to use the **Small issue** template in the next step.
 
 #### Writing and submitting your report
 
