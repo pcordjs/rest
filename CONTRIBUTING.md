@@ -65,7 +65,7 @@ Additionally, try to do the following:
 - Give the issue a **clear and concise** title.
 - Fill out **as many of the template's headers as possible**.
 - Provide a **code sample** to help readers reproduce the issue.
-- Provide your Node.js version, and operating system.
+- Provide your Node.js version, @pcordjs/rest version, and operating system.
 - Attach **screenshots or GIFs** to help display the problem.
 - Explain **when the problem started happening**. Was it after a recent update?
   Or has it always been happening?
