@@ -1,6 +1,7 @@
 /// <reference types="jest" />
 
 import * as http from 'node:http';
+import * as stream from 'node:stream';
 import timers from 'node:timers/promises';
 import { DiscordAPIError } from '.';
 import RESTClient, { BASE_USER_AGENT, TokenType } from './RESTClient';
@@ -224,6 +225,39 @@ describe('requests', () => {
   let client = new RESTClient({
     host: 'localhost',
     port: PORT
+  });
+
+  it('should send stream request bodies', async () => {
+    const handler = nextRequest().then(async ([req, res]) => {
+      try {
+        // data may be sent in multiple packets (chunks) so we need to buffer it
+        const body = await new Promise<string>((resolve, reject) => {
+          let data = '';
+          req.on('data', (chunk) => (data += chunk));
+          req.on('end', () => resolve(data));
+          req.on('error', reject);
+        });
+
+        // all data should be received even if multiple chunks were used
+        expect(body).toBe('foo\nbar');
+      } finally {
+        res.end();
+      }
+    });
+
+    const body = new stream.Readable();
+
+    // start the request before data is ready
+    const request = client.request('POST', '/', {
+      body
+    });
+
+    // send data via multiple chunks to test if everything is sent
+    body.push('foo\n');
+    body.push('bar');
+    body.push(null);
+
+    return Promise.all([request, handler]);
   });
 
   it('should always set the User-Agent and Accept-Encoding headers', async () => {
