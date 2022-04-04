@@ -49,6 +49,26 @@ export enum TokenType {
  */
 const httpsAgent = new https.Agent({ keepAlive: true });
 
+type PreparedRequest = {
+  headers: Record<string, string>;
+  method: string;
+  path: string;
+  host: string;
+  agent: https.Agent;
+  body?: Buffer | stream.Readable;
+  bucketId: string | null;
+  stack: string;
+  port?: number;
+} & (
+  | {
+      stream: false;
+      timeout: number;
+    }
+  | {
+      stream: true;
+    }
+);
+
 /**
  * Send REST requests to Discord.
  *
@@ -219,6 +239,86 @@ export default class RESTClient {
     }
   }
 
+  private prepareRequest(
+    options: RequestOptions & {
+      method: string;
+      path: string;
+      stack: string;
+      streamResponse: boolean;
+    }
+  ): PreparedRequest {
+    const headers: Record<string, string> = {
+      'User-Agent': this.userAgent,
+      'Accept-Encoding': 'gzip,deflate',
+      ...options.headers
+    };
+
+    if (options.auth) headers.Authorization = this.auth;
+    if (typeof options.body === 'object' && !(options.body instanceof Buffer))
+      headers['Content-Type'] = 'application/json';
+
+    let finalPath = `/api/v${this.options.apiVersion ?? '9'}${options.path}`;
+    if (options.queryString) finalPath += `?${options.queryString.toString()}`;
+
+    const finalBody =
+      options.body instanceof stream.Readable || options.body === undefined
+        ? options.body
+        : Buffer.from(
+            typeof options.body === 'object' &&
+              !(options.body instanceof Buffer)
+              ? JSON.stringify(options.body)
+              : options.body
+          );
+
+    const bucketId = RESTClient.getRateLimitBucket(options.path);
+
+    return {
+      headers,
+      method: options.method,
+      path: finalPath,
+      host: this.options.host ?? 'discord.com',
+      agent: this.options.agent ?? httpsAgent,
+      body: finalBody !== undefined ? finalBody : undefined,
+      timeout: options.timeout ?? this.options.timeout ?? Infinity,
+      bucketId,
+      stack: options.stack,
+      port: this.options.port,
+      stream: options.streamResponse
+    };
+  }
+
+  /**
+   * Enqueues a request in a rate limit bucket's queue.
+   * @param bucketId The ID of the bucket to push to.
+   * @param finalize The callback for when the request has reached the front of the bucket's queue.
+   */
+  private pushRequest(
+    bucketId: string | null,
+    finalize: RequestFinalizer
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let bucket = bucketId ? this.buckets.get(bucketId) : null;
+
+      if (bucketId && !bucket) {
+        bucket = {
+          remaining: Infinity,
+          reset: new Date(),
+          queue: [],
+          flushing: false
+        };
+        this.buckets.set(bucketId, bucket);
+      }
+
+      if (bucket) {
+        bucket.queue.push(finalize);
+        this.flushBucket(bucket).catch(reject);
+      } else {
+        this.queue.push(finalize);
+        this.flushGlobalBucket().catch(reject);
+      }
+    });
+  }
+
   /**
    * Sends an HTTPS request to the Discord API.
    *
@@ -269,72 +369,28 @@ export default class RESTClient {
     options: RequestOptions = {}
   ) {
     const stack = captureStack();
-    const headers: Record<string, string> = {
-      'User-Agent': this.userAgent,
-      'Accept-Encoding': 'gzip,deflate',
-      ...options.headers
-    };
-
-    if (options.auth) headers.Authorization = this.auth;
-    if (typeof options.body === 'object' && !(options.body instanceof Buffer))
-      headers['Content-Type'] = 'application/json';
-
-    let finalPath = `/api/v${this.options.apiVersion ?? '9'}${path}`;
-    if (options.queryString) finalPath += `?${options.queryString.toString()}`;
-
-    const finalBody =
-      options.body instanceof stream.Readable || options.body === undefined
-        ? options.body
-        : Buffer.from(
-            typeof options.body === 'object' &&
-              !(options.body instanceof Buffer)
-              ? JSON.stringify(options.body)
-              : options.body
-          );
-
-    const bucketId = RESTClient.getRateLimitBucket(path);
+    const preparedRequest = this.prepareRequest({
+      ...options,
+      method,
+      path,
+      stack,
+      streamResponse: false
+    });
 
     return new Promise<ResponseType>((resolve, reject) => {
       const finalize: RequestFinalizer = () =>
         new Promise<void>(
           (onResponse) =>
             void (
-              this.finalizeRequest({
-                headers,
-                method,
-                path: finalPath,
-                host: this.options.host ?? 'discord.com',
-                agent: this.options.agent ?? httpsAgent,
-                body: finalBody !== undefined ? finalBody : undefined,
-                timeout: options.timeout ?? this.options.timeout ?? Infinity,
-                bucketId,
-                onResponse,
-                stack,
-                port: this.options.port,
-                stream: false
-              }) as Promise<ResponseType>
+              this.finalizeRequest(
+                Object.assign(preparedRequest, {
+                  onResponse
+                })
+              ) as Promise<ResponseType>
             ).then(resolve, reject)
         );
 
-      let bucket = bucketId ? this.buckets.get(bucketId) : null;
-
-      if (bucketId && !bucket) {
-        bucket = {
-          remaining: Infinity,
-          reset: new Date(),
-          queue: [],
-          flushing: false
-        };
-        this.buckets.set(bucketId, bucket);
-      }
-
-      if (bucket) {
-        bucket.queue.push(finalize);
-        this.flushBucket(bucket).catch(reject);
-      } else {
-        this.queue.push(finalize);
-        this.flushGlobalBucket().catch(reject);
-      }
+      this.pushRequest(preparedRequest.bucketId, finalize).catch(reject);
     });
   }
 
@@ -349,28 +405,7 @@ export default class RESTClient {
    * Used because the stack frames would be useless without seeing where 3rd
    * party code is being run.
    */
-  private finalizeRequest(
-    init: {
-      headers: Record<string, string>;
-      method: string;
-      path: string;
-      host: string;
-      agent: https.Agent;
-      body?: Buffer | stream.Readable;
-      bucketId: string | null;
-      onResponse: () => void;
-      stack: string;
-      port?: number;
-    } & (
-      | {
-          stream: false;
-          timeout: number;
-        }
-      | {
-          stream: true;
-        }
-    )
-  ) {
+  private finalizeRequest(init: PreparedRequest & { onResponse: () => void }) {
     return new Promise((resolve, reject) => {
       let cancelled = false;
       const startTime = Date.now();
@@ -594,7 +629,7 @@ interface RateLimitBucket {
   flushing: boolean;
 }
 
-export interface RequestOptions {
+export interface StreamRequestOptions {
   /**
    * The headers to send with the request.
    *
@@ -657,6 +692,13 @@ export interface RequestOptions {
    */
   auth?: boolean;
   /**
+   * The query string appended to the API route.
+   */
+  queryString?: URLSearchParams;
+}
+
+export interface RequestOptions extends StreamRequestOptions {
+  /**
    * The amount of time to wait before giving up.
    *
    * @remarks
@@ -668,10 +710,6 @@ export interface RequestOptions {
    * @defaultValue {@link RESTClientOptions.timeout}
    */
   timeout?: number;
-  /**
-   * The query string appended to the API route.
-   */
-  queryString?: URLSearchParams;
 }
 
 export interface RESTClientOptions {
