@@ -310,7 +310,8 @@ export default class RESTClient {
                 bucketId,
                 onResponse,
                 stack,
-                port: this.options.port
+                port: this.options.port,
+                stream: false
               }) as Promise<ResponseType>
             ).then(resolve, reject)
         );
@@ -348,24 +349,33 @@ export default class RESTClient {
    * Used because the stack frames would be useless without seeing where 3rd
    * party code is being run.
    */
-  private finalizeRequest(init: {
-    headers: Record<string, string>;
-    method: string;
-    path: string;
-    host: string;
-    agent: https.Agent;
-    body?: Buffer | stream.Readable;
-    timeout: number;
-    bucketId: string | null;
-    onResponse: () => void;
-    stack: string;
-    port?: number;
-  }) {
+  private finalizeRequest(
+    init: {
+      headers: Record<string, string>;
+      method: string;
+      path: string;
+      host: string;
+      agent: https.Agent;
+      body?: Buffer | stream.Readable;
+      bucketId: string | null;
+      onResponse: () => void;
+      stack: string;
+      port?: number;
+    } & (
+      | {
+          stream: false;
+          timeout: number;
+        }
+      | {
+          stream: true;
+        }
+    )
+  ) {
     return new Promise((resolve, reject) => {
       let cancelled = false;
       const startTime = Date.now();
       const timeout =
-        init.timeout === Infinity
+        init.stream || init.timeout === Infinity
           ? null
           : setTimeout(() => {
               cancelled = true;
@@ -471,7 +481,9 @@ export default class RESTClient {
                 void this.finalizeRequest(
                   Object.assign(init, {
                     onResponse,
-                    timeout: init.timeout - (Date.now() - startTime)
+                    timeout: init.stream
+                      ? null
+                      : init.timeout - (Date.now() - startTime)
                   })
                 ).then(resolve, reject);
               })
@@ -489,37 +501,40 @@ export default class RESTClient {
             stream = response.pipe(createInflate());
         }
 
-        stream.once('error', handleError);
+        if (init.stream && !cancelled) resolve(stream);
+        else {
+          stream.once('error', handleError);
 
-        let data = '';
-        if (!cancelled) {
-          stream
-            .on('data', (chunk) => {
-              data += chunk;
-            })
-            .once('end', () => {
-              if (cancelled) return;
-              if (timeout !== null) clearTimeout(timeout);
-              const parsedData = response.headers['content-type']?.startsWith(
-                'application/json'
-              )
-                ? (JSON.parse(data) as unknown)
-                : Buffer.from(data);
+          if (!cancelled) {
+            let data = '';
+            stream
+              .on('data', (chunk) => {
+                data += chunk;
+              })
+              .once('end', () => {
+                if (cancelled) return;
+                if (timeout !== null) clearTimeout(timeout);
+                const parsedData = response.headers['content-type']?.startsWith(
+                  'application/json'
+                )
+                  ? (JSON.parse(data) as unknown)
+                  : Buffer.from(data);
 
-              if (errored) {
-                if (parsedData instanceof Buffer)
-                  reject(new DiscordAPIError(-1, parsedData.toString()));
-                else {
-                  reject(
-                    new DiscordAPIError(
-                      (parsedData as FailedRequest).code,
-                      (parsedData as FailedRequest).message,
-                      init.stack
-                    )
-                  );
-                }
-              } else resolve(parsedData);
-            });
+                if (errored) {
+                  if (parsedData instanceof Buffer)
+                    reject(new DiscordAPIError(-1, parsedData.toString()));
+                  else {
+                    reject(
+                      new DiscordAPIError(
+                        (parsedData as FailedRequest).code,
+                        (parsedData as FailedRequest).message,
+                        init.stack
+                      )
+                    );
+                  }
+                } else resolve(parsedData);
+              });
+          }
         }
       });
 
