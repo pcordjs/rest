@@ -523,7 +523,7 @@ export default class RESTClient {
         }
       });
 
-      if (init.body instanceof stream.Writable) init.body.pipe(request);
+      if (init.body instanceof stream.Readable) init.body.pipe(request);
       else request.end(init.body);
     });
   }
