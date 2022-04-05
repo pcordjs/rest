@@ -239,6 +239,17 @@ export default class RESTClient {
     }
   }
 
+  /**
+   * Prepares a request to be sent by setting the User Agent, adding
+   * authentication, calculating the rate limit bucket, etc.
+   *
+   * This method doesn't have any side effects so it should be called as soon as
+   * possible to get useful information like the rate limit bucket id.
+   *
+   * @param options The options used to create the request.
+   * @returns A PreparedRequest object that can be used with
+   * {@link RESTClient.finalizeRequest}.
+   */
   private prepareRequest(
     options: RequestOptions & {
       method: string;
@@ -390,6 +401,10 @@ export default class RESTClient {
             ).then(resolve, reject)
         );
 
+      /*
+       * .catch(reject) here won't cause a double rejection because
+       * if the push fails, finalize will never be called
+       */
       this.pushRequest(preparedRequest.bucketId, finalize).catch(reject);
     });
   }
