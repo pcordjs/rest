@@ -389,16 +389,13 @@ export default class RESTClient {
 
     return new Promise<ResponseType>((resolve, reject) => {
       const finalize: RequestFinalizer = () =>
-        new Promise<void>(
-          (onResponse) =>
-            void (
-              this.finalizeRequest(
-                Object.assign(preparedRequest, {
-                  onResponse
-                })
-              ) as Promise<ResponseType>
-            ).then(resolve, reject)
-        );
+        new Promise<void>((onResponse) => {
+          const request = this.finalizeRequest({
+            ...preparedRequest,
+            onResponse
+          }) as Promise<ResponseType>;
+          request.then(resolve, reject);
+        });
 
       this.pushRequest(preparedRequest.bucketId, finalize);
     });
