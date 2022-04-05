@@ -303,31 +303,30 @@ export default class RESTClient {
    * @param bucketId The ID of the bucket to push to.
    * @param finalize The callback for when the request has reached the front of the bucket's queue.
    */
-  private pushRequest(
-    bucketId: string | null,
-    finalize: RequestFinalizer
-  ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      let bucket = bucketId ? this.buckets.get(bucketId) : null;
+  private pushRequest(bucketId: string | null, finalize: RequestFinalizer) {
+    let bucket = bucketId ? this.buckets.get(bucketId) : null;
 
-      if (bucketId && !bucket) {
-        bucket = {
-          remaining: Infinity,
-          reset: new Date(),
-          queue: [],
-          flushing: false
-        };
-        this.buckets.set(bucketId, bucket);
-      }
+    if (bucketId && !bucket) {
+      bucket = {
+        remaining: Infinity,
+        reset: new Date(),
+        queue: [],
+        flushing: false
+      };
+      this.buckets.set(bucketId, bucket);
+    }
 
-      if (bucket) {
-        bucket.queue.push(finalize);
-        this.flushBucket(bucket).catch(reject);
-      } else {
-        this.queue.push(finalize);
-        this.flushGlobalBucket().catch(reject);
-      }
-    });
+    if (bucket) {
+      bucket.queue.push(finalize);
+      /*
+       * we don't need to catch this because finalizer callbacks
+       * are required to not throw
+       */
+      void this.flushBucket(bucket);
+    } else {
+      this.queue.push(finalize);
+      void this.flushGlobalBucket();
+    }
   }
 
   /**
@@ -401,11 +400,7 @@ export default class RESTClient {
             ).then(resolve, reject)
         );
 
-      /*
-       * .catch(reject) here won't cause a double rejection because
-       * if the push fails, finalize will never be called
-       */
-      this.pushRequest(preparedRequest.bucketId, finalize).catch(reject);
+      this.pushRequest(preparedRequest.bucketId, finalize);
     });
   }
 
@@ -635,6 +630,7 @@ interface RateLimitBucket {
   reset: Date;
   /**
    * All requests that are waiting to be sent and are tied to this rate limit bucket.
+   * Callbacks MUST NOT throw.
    */
   queue: RequestFinalizer[];
   /**
