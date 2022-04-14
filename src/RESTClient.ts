@@ -261,15 +261,23 @@ export default class RESTClient {
       skipDecompress: boolean;
     }
   ): PreparedRequest {
+    const defaultHost = 'discord.com';
     const headers: Record<string, string> = {
-      'User-Agent': this.userAgent,
-      'Accept-Encoding': 'gzip,deflate',
-      ...options.headers
+      'user-agent': this.userAgent,
+      'accept-encoding': 'gzip,deflate',
+      // convert to lowercase to remove duplicates with slightly different case
+      ...Object.fromEntries(
+        Object.entries(options.headers ?? {}).map(([key, value]) => [
+          key.toLowerCase(),
+          value
+        ])
+      ),
+      host: this.options.host ?? defaultHost
     };
 
     if (options.auth) headers.Authorization = this.auth;
     if (typeof options.body === 'object' && !(options.body instanceof Buffer))
-      headers['Content-Type'] = 'application/json';
+      headers['content-type'] = 'application/json';
 
     let finalPath = `/api/v${this.options.apiVersion ?? '9'}${options.path}`;
     if (options.queryString) finalPath += `?${options.queryString.toString()}`;
@@ -290,7 +298,7 @@ export default class RESTClient {
       headers,
       method: options.method,
       path: finalPath,
-      host: this.options.host ?? 'discord.com',
+      host: this.options.host ?? defaultHost,
       agent: this.options.agent ?? httpsAgent,
       body: finalBody !== undefined ? finalBody : undefined,
       timeout: options.timeout ?? this.options.timeout ?? Infinity,
