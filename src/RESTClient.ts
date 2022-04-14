@@ -1,3 +1,4 @@
+import { IncomingHttpHeaders } from 'node:http';
 import * as https from 'node:https';
 import * as stream from 'node:stream';
 import * as timers from 'node:timers/promises';
@@ -48,6 +49,27 @@ export enum TokenType {
  * reducing the time needed to reconnect.
  */
 const httpsAgent = new https.Agent({ keepAlive: true });
+
+type PreparedRequest = {
+  headers: Record<string, string>;
+  method: string;
+  path: string;
+  host: string;
+  agent: https.Agent;
+  body?: Buffer | stream.Readable;
+  bucketId: string | null;
+  stack: string;
+  port?: number;
+  skipDecompress: boolean;
+} & (
+  | {
+      stream: false;
+      timeout: number;
+    }
+  | {
+      stream: true;
+    }
+);
 
 /**
  * Send REST requests to Discord.
@@ -220,6 +242,106 @@ export default class RESTClient {
   }
 
   /**
+   * Prepares a request to be sent by setting the User Agent, adding
+   * authentication, calculating the rate limit bucket, etc.
+   *
+   * This method doesn't have any side effects so it should be called as soon as
+   * possible to get useful information like the rate limit bucket id.
+   *
+   * @param options The options used to create the request.
+   * @returns A PreparedRequest object that can be used with
+   * {@link RESTClient.finalizeRequest}.
+   */
+  private prepareRequest(
+    options: RequestOptions & {
+      method: string;
+      path: string;
+      stack: string;
+      streamResponse: boolean;
+      skipDecompress: boolean;
+    }
+  ): PreparedRequest {
+    const defaultHost = 'discord.com';
+    const headers: Record<string, string> = {
+      'user-agent': this.userAgent,
+      'accept-encoding': 'gzip,deflate',
+      // convert to lowercase to remove duplicates with slightly different case
+      ...Object.fromEntries(
+        Object.entries(options.headers ?? {}).map(([key, value]) => [
+          key.toLowerCase(),
+          value
+        ])
+      ),
+      host: this.options.host ?? defaultHost
+    };
+
+    if (options.auth) headers.Authorization = this.auth;
+    if (typeof options.body === 'object' && !(options.body instanceof Buffer))
+      headers['content-type'] = 'application/json';
+
+    let finalPath = `/api/v${this.options.apiVersion ?? '9'}${options.path}`;
+    if (options.queryString) finalPath += `?${options.queryString.toString()}`;
+
+    const finalBody =
+      options.body instanceof stream.Readable || options.body === undefined
+        ? options.body
+        : Buffer.from(
+            typeof options.body === 'object' &&
+              !(options.body instanceof Buffer)
+              ? JSON.stringify(options.body)
+              : options.body
+          );
+
+    const bucketId = RESTClient.getRateLimitBucket(options.path);
+
+    return {
+      headers,
+      method: options.method,
+      path: finalPath,
+      host: this.options.host ?? defaultHost,
+      agent: this.options.agent ?? httpsAgent,
+      body: finalBody !== undefined ? finalBody : undefined,
+      timeout: options.timeout ?? this.options.timeout ?? Infinity,
+      bucketId,
+      stack: options.stack,
+      port: this.options.port,
+      stream: options.streamResponse,
+      skipDecompress: options.skipDecompress
+    };
+  }
+
+  /**
+   * Enqueues a request in a rate limit bucket's queue.
+   * @param bucketId The ID of the bucket to push to.
+   * @param finalize The callback for when the request has reached the front of the bucket's queue.
+   */
+  private pushRequest(bucketId: string | null, finalize: RequestFinalizer) {
+    let bucket = bucketId ? this.buckets.get(bucketId) : null;
+
+    if (bucketId && !bucket) {
+      bucket = {
+        remaining: Infinity,
+        reset: new Date(),
+        queue: [],
+        flushing: false
+      };
+      this.buckets.set(bucketId, bucket);
+    }
+
+    if (bucket) {
+      bucket.queue.push(finalize);
+      /*
+       * we don't need to catch this because finalizer callbacks
+       * are required to not throw
+       */
+      void this.flushBucket(bucket);
+    } else {
+      this.queue.push(finalize);
+      void this.flushGlobalBucket();
+    }
+  }
+
+  /**
    * Sends an HTTPS request to the Discord API.
    *
    * @example Sending a "Hello World!" message to a channel
@@ -269,67 +391,68 @@ export default class RESTClient {
     options: RequestOptions = {}
   ) {
     const stack = captureStack();
-    const headers: Record<string, string> = {
-      'User-Agent': this.userAgent,
-      'Accept-Encoding': 'gzip,deflate',
-      ...options.headers
-    };
-
-    if (options.auth) headers.Authorization = this.auth;
-    if (typeof options.body === 'object' && !(options.body instanceof Buffer))
-      headers['Content-Type'] = 'application/json';
-
-    let finalPath = `/api/v${this.options.apiVersion ?? '9'}${path}`;
-    if (options.queryString) finalPath += `?${options.queryString.toString()}`;
-
-    const finalBody =
-      typeof options.body === 'object' && !(options.body instanceof Buffer)
-        ? Buffer.from(JSON.stringify(options.body))
-        : options.body;
-
-    const bucketId = RESTClient.getRateLimitBucket(path);
+    const preparedRequest = this.prepareRequest({
+      ...options,
+      method,
+      path,
+      stack,
+      streamResponse: false,
+      skipDecompress: false
+    });
 
     return new Promise<ResponseType>((resolve, reject) => {
       const finalize: RequestFinalizer = () =>
-        new Promise<void>(
-          (onResponse) =>
-            void (
-              this.finalizeRequest({
-                headers,
-                method,
-                path: finalPath,
-                host: this.options.host ?? 'discord.com',
-                agent: this.options.agent ?? httpsAgent,
-                body:
-                  finalBody !== undefined ? Buffer.from(finalBody) : undefined,
-                timeout: options.timeout ?? this.options.timeout ?? Infinity,
-                bucketId,
-                onResponse,
-                stack,
-                port: this.options.port
-              }) as Promise<ResponseType>
-            ).then(resolve, reject)
-        );
+        new Promise<void>((onResponse) => {
+          const request = this.finalizeRequest({
+            ...preparedRequest,
+            onResponse
+          }) as Promise<ResponseType>;
+          request.then(resolve, reject);
+        });
 
-      let bucket = bucketId ? this.buckets.get(bucketId) : null;
+      this.pushRequest(preparedRequest.bucketId, finalize);
+    });
+  }
 
-      if (bucketId && !bucket) {
-        bucket = {
-          remaining: Infinity,
-          reset: new Date(),
-          queue: [],
-          flushing: false
-        };
-        this.buckets.set(bucketId, bucket);
-      }
+  /**
+   * Sends a request to the API and returns the streamed response body.
+   *
+   * @example A simple proxy that uses this method
+   * ```ts
+   * // TODO
+   * ```
+   *
+   * @returns A promise that resolves to a StreamedResponse object once the
+   * headers have been received
+   *
+   * @see {@link RESTClient.request}
+   */
+  public createStream(
+    method: string,
+    path: string,
+    options: StreamRequestOptions = {}
+  ) {
+    const stack = captureStack();
+    const preparedRequest = this.prepareRequest({
+      ...options,
+      method,
+      path,
+      stack,
+      streamResponse: true,
+      skipDecompress: options.skipDecompress ?? false
+    });
 
-      if (bucket) {
-        bucket.queue.push(finalize);
-        this.flushBucket(bucket).catch(reject);
-      } else {
-        this.queue.push(finalize);
-        this.flushGlobalBucket().catch(reject);
-      }
+    return new Promise<StreamedResponse>((resolve, reject) => {
+      const finalize: RequestFinalizer = () =>
+        new Promise<void>((onResponse) => {
+          const request = this.finalizeRequest({
+            ...preparedRequest,
+            onResponse
+          }) as Promise<StreamedResponse>;
+          request.then(resolve, reject);
+        });
+
+      this.pushRequest(preparedRequest.bucketId, finalize);
     });
   }
 
@@ -344,24 +467,12 @@ export default class RESTClient {
    * Used because the stack frames would be useless without seeing where 3rd
    * party code is being run.
    */
-  private finalizeRequest(init: {
-    headers: Record<string, string>;
-    method: string;
-    path: string;
-    host: string;
-    agent: https.Agent;
-    body?: Buffer;
-    timeout: number;
-    bucketId: string | null;
-    onResponse: () => void;
-    stack: string;
-    port?: number;
-  }) {
+  private finalizeRequest(init: PreparedRequest & { onResponse: () => void }) {
     return new Promise((resolve, reject) => {
       let cancelled = false;
       const startTime = Date.now();
       const timeout =
-        init.timeout === Infinity
+        init.stream || init.timeout === Infinity
           ? null
           : setTimeout(() => {
               cancelled = true;
@@ -467,7 +578,9 @@ export default class RESTClient {
                 void this.finalizeRequest(
                   Object.assign(init, {
                     onResponse,
-                    timeout: init.timeout - (Date.now() - startTime)
+                    timeout: init.stream
+                      ? null
+                      : init.timeout - (Date.now() - startTime)
                   })
                 ).then(resolve, reject);
               })
@@ -477,7 +590,7 @@ export default class RESTClient {
         response.once('error', handleError);
 
         let stream: stream.Readable = response;
-        if (response.headers['content-encoding']) {
+        if (response.headers['content-encoding'] && !init.skipDecompress) {
           const encoding = response.headers['content-encoding'];
 
           if (encoding.includes('gzip')) stream = response.pipe(createGunzip());
@@ -485,41 +598,57 @@ export default class RESTClient {
             stream = response.pipe(createInflate());
         }
 
-        stream.once('error', handleError);
+        if (init.stream && !cancelled) {
+          const streamedResponse: StreamedResponse = {
+            stream,
+            headers: response.headers,
+            /*
+             * The response's statusCode will always be defined because we got
+             * it from a client request.
+             */
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            statusCode: response.statusCode!
+          };
 
-        let data = '';
-        if (!cancelled) {
-          stream
-            .on('data', (chunk) => {
-              data += chunk;
-            })
-            .once('end', () => {
-              if (cancelled) return;
-              if (timeout !== null) clearTimeout(timeout);
-              const parsedData = response.headers['content-type']?.startsWith(
-                'application/json'
-              )
-                ? (JSON.parse(data) as unknown)
-                : Buffer.from(data);
+          resolve(streamedResponse);
+        } else {
+          stream.once('error', handleError);
 
-              if (errored) {
-                if (parsedData instanceof Buffer)
-                  reject(new DiscordAPIError(-1, parsedData.toString()));
-                else {
-                  reject(
-                    new DiscordAPIError(
-                      (parsedData as FailedRequest).code,
-                      (parsedData as FailedRequest).message,
-                      init.stack
-                    )
-                  );
-                }
-              } else resolve(parsedData);
-            });
+          if (!cancelled) {
+            let data = '';
+            stream
+              .on('data', (chunk) => {
+                data += chunk;
+              })
+              .once('end', () => {
+                if (cancelled) return;
+                if (timeout !== null) clearTimeout(timeout);
+                const parsedData = response.headers['content-type']?.startsWith(
+                  'application/json'
+                )
+                  ? (JSON.parse(data) as unknown)
+                  : Buffer.from(data);
+
+                if (errored) {
+                  if (parsedData instanceof Buffer)
+                    reject(new DiscordAPIError(-1, parsedData.toString()));
+                  else {
+                    reject(
+                      new DiscordAPIError(
+                        (parsedData as FailedRequest).code,
+                        (parsedData as FailedRequest).message,
+                        init.stack
+                      )
+                    );
+                  }
+                } else resolve(parsedData);
+              });
+          }
         }
       });
 
-      request.end(init.body);
+      if (init.body instanceof stream.Readable) init.body.pipe(request);
+      else request.end(init.body);
     });
   }
 
@@ -565,6 +694,7 @@ interface RateLimitBucket {
   reset: Date;
   /**
    * All requests that are waiting to be sent and are tied to this rate limit bucket.
+   * Callbacks MUST NOT throw.
    */
   queue: RequestFinalizer[];
   /**
@@ -574,7 +704,7 @@ interface RateLimitBucket {
   flushing: boolean;
 }
 
-export interface RequestOptions {
+export interface BaseRequestOptions {
   /**
    * The headers to send with the request.
    *
@@ -619,7 +749,12 @@ export interface RequestOptions {
    * added
    * @see {@link RESTClient.request} for an example using this field
    */
-  body?: string | Buffer | Record<string, unknown> | unknown[];
+  body?:
+    | string
+    | Buffer
+    | Record<string, unknown>
+    | unknown[]
+    | stream.Readable;
   /**
    * Controls if the request will be authenticated.
    *
@@ -632,6 +767,13 @@ export interface RequestOptions {
    */
   auth?: boolean;
   /**
+   * The query string appended to the API route.
+   */
+  queryString?: URLSearchParams;
+}
+
+export interface RequestOptions extends BaseRequestOptions {
+  /**
    * The amount of time to wait before giving up.
    *
    * @remarks
@@ -643,10 +785,20 @@ export interface RequestOptions {
    * @defaultValue {@link RESTClientOptions.timeout}
    */
   timeout?: number;
+}
+
+export interface StreamRequestOptions extends BaseRequestOptions {
   /**
-   * The query string appended to the API route.
+   * Skip decompressing the response stream.
+   *
+   * @remarks
+   * This option may be useful for implementing a proxy that use the data and
+   * simply forwards it. In that case, enabling this means that there will be
+   * less I/O (because the response is still compressed at the time it is
+   * forwarded), and the responsibility of decompressing will be passed on to
+   * the proxy's client.
    */
-  queryString?: URLSearchParams;
+  skipDecompress?: boolean;
 }
 
 export interface RESTClientOptions {
@@ -754,4 +906,15 @@ export interface RESTClientOptions {
    * @see {@link RequestOptions.timeout} for more information
    */
   timeout?: number;
+}
+
+export interface StreamedResponse {
+  stream: stream.Readable;
+  headers: IncomingHttpHeaders & {
+    'x-ratelimit-limit'?: string;
+    'x-ratelimit-reset'?: string;
+    'x-ratelimit-remaining'?: string;
+    'x-ratelimit-global'?: string;
+  };
+  statusCode: number;
 }
