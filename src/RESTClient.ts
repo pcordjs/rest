@@ -1,3 +1,4 @@
+import { IncomingHttpHeaders } from 'node:http';
 import * as https from 'node:https';
 import * as stream from 'node:stream';
 import * as timers from 'node:timers/promises';
@@ -59,6 +60,7 @@ type PreparedRequest = {
   bucketId: string | null;
   stack: string;
   port?: number;
+  skipDecompress: boolean;
 } & (
   | {
       stream: false;
@@ -256,6 +258,7 @@ export default class RESTClient {
       path: string;
       stack: string;
       streamResponse: boolean;
+      skipDecompress: boolean;
     }
   ): PreparedRequest {
     const headers: Record<string, string> = {
@@ -294,7 +297,8 @@ export default class RESTClient {
       bucketId,
       stack: options.stack,
       port: this.options.port,
-      stream: options.streamResponse
+      stream: options.streamResponse,
+      skipDecompress: options.skipDecompress
     };
   }
 
@@ -384,7 +388,8 @@ export default class RESTClient {
       method,
       path,
       stack,
-      streamResponse: false
+      streamResponse: false,
+      skipDecompress: false
     });
 
     return new Promise<ResponseType>((resolve, reject) => {
@@ -394,6 +399,48 @@ export default class RESTClient {
             ...preparedRequest,
             onResponse
           }) as Promise<ResponseType>;
+          request.then(resolve, reject);
+        });
+
+      this.pushRequest(preparedRequest.bucketId, finalize);
+    });
+  }
+
+  /**
+   * Sends a request to the API and returns the streamed response body.
+   *
+   * @example A simple proxy that uses this method
+   * ```ts
+   * // TODO
+   * ```
+   *
+   * @returns A promise that resolves to a StreamedResponse object once the
+   * headers have been received
+   *
+   * @see {@link RESTClient.request}
+   */
+  public createStream(
+    method: string,
+    path: string,
+    options: StreamRequestOptions = {}
+  ) {
+    const stack = captureStack();
+    const preparedRequest = this.prepareRequest({
+      ...options,
+      method,
+      path,
+      stack,
+      streamResponse: true,
+      skipDecompress: options.skipDecompress ?? false
+    });
+
+    return new Promise<StreamedResponse>((resolve, reject) => {
+      const finalize: RequestFinalizer = () =>
+        new Promise<void>((onResponse) => {
+          const request = this.finalizeRequest({
+            ...preparedRequest,
+            onResponse
+          }) as Promise<StreamedResponse>;
           request.then(resolve, reject);
         });
 
@@ -535,7 +582,7 @@ export default class RESTClient {
         response.once('error', handleError);
 
         let stream: stream.Readable = response;
-        if (response.headers['content-encoding']) {
+        if (response.headers['content-encoding'] && !init.skipDecompress) {
           const encoding = response.headers['content-encoding'];
 
           if (encoding.includes('gzip')) stream = response.pipe(createGunzip());
@@ -543,8 +590,20 @@ export default class RESTClient {
             stream = response.pipe(createInflate());
         }
 
-        if (init.stream && !cancelled) resolve(stream);
-        else {
+        if (init.stream && !cancelled) {
+          const streamedResponse: StreamedResponse = {
+            stream,
+            headers: response.headers,
+            /*
+             * The response's statusCode will always be defined because we got
+             * it from a client request.
+             */
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            statusCode: response.statusCode!
+          };
+
+          resolve(streamedResponse);
+        } else {
           stream.once('error', handleError);
 
           if (!cancelled) {
@@ -637,7 +696,7 @@ interface RateLimitBucket {
   flushing: boolean;
 }
 
-export interface StreamRequestOptions {
+export interface BaseRequestOptions {
   /**
    * The headers to send with the request.
    *
@@ -705,7 +764,7 @@ export interface StreamRequestOptions {
   queryString?: URLSearchParams;
 }
 
-export interface RequestOptions extends StreamRequestOptions {
+export interface RequestOptions extends BaseRequestOptions {
   /**
    * The amount of time to wait before giving up.
    *
@@ -718,6 +777,20 @@ export interface RequestOptions extends StreamRequestOptions {
    * @defaultValue {@link RESTClientOptions.timeout}
    */
   timeout?: number;
+}
+
+export interface StreamRequestOptions extends BaseRequestOptions {
+  /**
+   * Skip decompressing the response stream.
+   *
+   * @remarks
+   * This option may be useful for implementing a proxy that use the data and
+   * simply forwards it. In that case, enabling this means that there will be
+   * less I/O (because the response is still compressed at the time it is
+   * forwarded), and the responsibility of decompressing will be passed on to
+   * the proxy's client.
+   */
+  skipDecompress?: boolean;
 }
 
 export interface RESTClientOptions {
@@ -825,4 +898,15 @@ export interface RESTClientOptions {
    * @see {@link RequestOptions.timeout} for more information
    */
   timeout?: number;
+}
+
+export interface StreamedResponse {
+  stream: stream.Readable;
+  headers: IncomingHttpHeaders & {
+    'x-ratelimit-limit'?: string;
+    'x-ratelimit-reset'?: string;
+    'x-ratelimit-remaining'?: string;
+    'x-ratelimit-global'?: string;
+  };
+  statusCode: number;
 }
